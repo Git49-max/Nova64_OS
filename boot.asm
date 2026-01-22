@@ -1,6 +1,6 @@
-;Bootloader for Nova64 OS. Originally ;wrote by Saulo Henrique in Thursday, ;January 22nd, 2026.
+;Bootloader for Nova64 OS. Originally wrote by Saulo Henrique in Thursday, January 22nd, 2026.
 
-;Last update: Thursday, January 22nd, ;2026, at 17:15 GMT-3 (Horário de Brasília)
+;Last update: Thursday, January 22nd, 2026, at 17:15 GMT-3 (Horário de Brasília)
 
 ;boot.asm
 
