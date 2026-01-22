@@ -16,10 +16,10 @@ vram[offset + 1] = color;
 /* putc for a single caractere, now print for a string */
 void print(char *str, unsigned char color, int x, int y){
 int i = 0;
-while(str[i] != /0){
+while(str[i] != '\0'){
 if(x + i >= 80){
 putc(str[i], color, x + i, y + i);
 } else putc(str[i], color, x + i, y);
 i++;
 }
-
+}
