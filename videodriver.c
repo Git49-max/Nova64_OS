@@ -23,4 +23,3 @@ putc(str[i], color, x + i, y + i);
 i++;
 }
 
-void main();
