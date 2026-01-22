@@ -1,6 +1,6 @@
 ;Global Descriptor Table Nova64 OS. Originally wrote by Saulo Henrique in Thursday, January 22nd, 2026.
 
-;Last update: Thursday, January 22nd, ;026, at 17:16 GMT-3 (Horário de Brasília)
+;Last update: Thursday, January 22nd, 2026, at 17:16 GMT-3 (Horário de Brasília)
 
 ;gdt.asm
 
