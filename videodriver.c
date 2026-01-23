@@ -1,6 +1,6 @@
 /* Video driver for Nova64 OS (Text mode). Originally wrote by Saulo Henrique in Thursday, January 22nd, 2026.
 
-Last update: Thursday, January 22nd, 2026, at 16:02 GMT-3 (Horário de Brasília)
+Last update: Thursday, January 22nd, 2026, at 21:06 GMT-3 (Horário de Brasília)
 
 videodriver.c
 
@@ -23,3 +23,11 @@ putc(str[i], color, x + i, y + i);
 i++;
 }
 }
+void clear_screen() {
+    volatile unsigned char *vram = (unsigned char*) vidAdr;
+    for (int i = 0; i < 80 * 25 * 2; i += 2) {
+        vram[i] = ' ';      
+        vram[i+1] = 0x07;   
+    }
+}
+
