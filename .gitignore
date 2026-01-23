@@ -1,0 +1,7 @@
+kernel.o
+videodriver.o
+*.o
+boot.bin
+nova64.img
+*.bin
+*.img
