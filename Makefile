@@ -1,10 +1,10 @@
-/* Makefile for Nova64 OS. Originally wrote by Saulo Henrique in Thursday, January 22nd, 2026.
+#Makefile for Nova64 OS. Originally wrote by Saulo Henrique in Thursday, January 22nd, 2026.
 
-Last update: Friday, January 23rd, 2026, at 19:24 GMT-3 (Horário de Brasília)
+#Last update: Friday, January 23rd, 2026, at 19:24 GMT-3 (Horário de Brasília)
 
-Makefile
+#Makefile
 
-*/
+
 
 AS = nasm
 CC = gcc
@@ -19,7 +19,6 @@ BOOT_BIN = boot.bin
 KERNEL_BIN = kernel.bin
 IMAGE = nova64.img
 
-# Adicionando os novos arquivos aqui:
 KERNEL_OBJS = kernel.o videodriver.o rtcdriver.o io.o
 
 all: $(IMAGE)

@@ -4,7 +4,7 @@ Last update: Friday, January 23rd, 2026, at 16:56 GMT-3 (Horário de Brasília)
 
 rtcdriver.c*/
 
-#include io.h
+#include "io.h"
 unsigned char get_rtc_register(int reg) {
     outb(0x70, reg);
     return inb(0x71);
