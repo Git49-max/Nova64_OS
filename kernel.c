@@ -1,5 +1,5 @@
 /* Basic kernel for Nova64 OS. Originally wrote by Saulo Henrique in Thursday, January 22nd, 2026.
-Last update: Friday, January 23rd, 2026, at 22:45 GMT-3 (Horário de Brasília)
+Last update: Saturday, January 24th, 2026, at 08:33 GMT-3 (Horário de Brasília)
 
 kernel.c */
 
@@ -12,7 +12,9 @@ void main() {
     int h, m, s;
     int cursor_x = 0;
     int cursor_y = 2;
-
+    while (inb(0x64) & 0x01) {
+    inb(0x60);
+    }
     print("Nova64 is here!", 0x02, 0, 0);
     putc('>', 0x02, 0, 1);
     print(" System ready to further development", 0x02, 1, 1);
