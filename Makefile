@@ -1,6 +1,6 @@
 #Makefile for Nova64 OS. Originally wrote by Saulo Henrique in Thursday, January 22nd, 2026.
 
-#Last update: Friday, January 23rd, 2026, at 19:24 GMT-3 (Horário de Brasília)
+#Last update: Friday, January 23rd, 2026, at 22:21 GMT-3 (Horário de Brasília)
 
 #Makefile
 
@@ -19,7 +19,7 @@ BOOT_BIN = boot.bin
 KERNEL_BIN = kernel.bin
 IMAGE = nova64.img
 
-KERNEL_OBJS = kernel.o videodriver.o rtcdriver.o io.o
+KERNEL_OBJS = kernel.o videodriver.o rtcdriver.o io.o kbdriver.o
 
 all: $(IMAGE)
 
