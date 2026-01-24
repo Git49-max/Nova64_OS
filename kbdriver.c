@@ -1,6 +1,6 @@
 /* Keyboard driver. Originally wrote by Saulo Henrique in Friday, January 23rd, 2026.
 
-Last update: Friday, January 23rd, 2026, at 22:06 GMT-3 (Horário de Brasília)
+Last update: Saturday, January 24th, 2026, at 08:31 GMT-3 (Horário de Brasília)
 
 kbdriver.c*/
 
@@ -50,10 +50,10 @@ unsigned char keyboard_map[128] = {
 char get_key(){
   unsigned char status = inb(0x64);
   if(status & 0x01){
- //     unsigned char scancode = inb(0x60);
-  //    if(scancode < 80){
-  //         return keyboard_map[scancode];
-    //  }
+     unsigned char scancode = inb(0x60);
+      if(scancode < 128){
+          return keyboard_map[scancode];
+    }
       return inb(0x60);
   }
 return 0;
