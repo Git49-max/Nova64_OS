@@ -1,6 +1,6 @@
 ;Bootloader for Nova64 OS. Originally wrote by Saulo Henrique in Thursday, January 22nd, 2026.
 
-;Last update: Thursday, January 22nd, 2026, at 20:28 GMT-3 (Horário de Brasília)
+;Last update: Saturday, January 24th, 2026, at 14:10 GMT-3 (Horário de Brasília)
 
 ;boot.asm
 
@@ -31,7 +31,7 @@ load_kernel:
     mov bx, KERNEL_OFFSET 
 
     mov ah, 0x02        ; Ler setores
-    mov al, 15          ; Quantidade de setores do kernel
+    mov al, 32; Quantidade de setores do kernel
     mov ch, 0x00
     mov dh, 0x00
     mov cl, 0x02        ; Começa no setor 2
