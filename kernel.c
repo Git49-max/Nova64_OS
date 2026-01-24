@@ -13,7 +13,9 @@ void main() {
     clear_screen();
     int h, m, s;
 
-    while (inb(0x64) & 0x01) { inb(0x60); }
+    while (inb(0x64) & 0x01) { 
+        inb(0x60); 
+    }
     
     idt_init();
     keyboard_init();
