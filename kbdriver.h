@@ -8,4 +8,5 @@ kbdriver.h*/
 #define KBDRIVER_H
 char get_key();
 void keyboard_init();
+extern unsigned char keyboard_map[128];
 #endif
