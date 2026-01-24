@@ -6,7 +6,7 @@ kbdriver.h*/
 
 #ifndef KBDRIVER_H
 #define KBDRIVER_H
-char get_key();
+void keyboard_handler();
 void keyboard_init();
 extern unsigned char keyboard_map[128];
 #endif
