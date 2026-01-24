@@ -17,7 +17,7 @@ void main() {
         inb(0x60); 
     }
     
-    //idt_init();
+    idt_init();
     keyboard_init();
 
     print("Nova64 OS - IDT Keyboard Active", 0x02, 0, 0);
