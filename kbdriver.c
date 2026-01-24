@@ -23,7 +23,6 @@ unsigned char keyboard_map[128] = {
 
 void keyboard_handler() {
     unsigned char scancode = inb(0x60);
-    
     if (!(scancode & 0x80)) {
         if (scancode < 128) {
             char key = keyboard_map[scancode];
@@ -37,8 +36,5 @@ void keyboard_handler() {
     outb(0x20, 0x20);
 }
 
-void keyboard_init() {
-    while (inb(0x64) & 0x02);
-    outb(0x60, 0xF4);
-}
+
 
