@@ -6,6 +6,8 @@ kbdriver.h*/
 
 #ifndef KBDRIVER_H
 #define KBDRIVER_H
-void keyboard_handler();
+
 void keyboard_init();
+void keyboard_handler();
+
 #endif
