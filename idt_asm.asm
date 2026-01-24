@@ -1,3 +1,4 @@
+[bits 32]
 [global idt_load]
 [global irq1]
 [extern idtp]
