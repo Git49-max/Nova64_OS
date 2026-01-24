@@ -21,7 +21,7 @@ void main(){
       cursor_x++;
       if(cursor_x > 79){
         cursor_x = 0;
-        cursor_y++;
+        cursor_y++;}
     get_time(&h, &m, &s);
     if(h < 10){
        print_int('0', 0x02, 75, 24);
@@ -33,4 +33,4 @@ void main(){
     };
     print_int(m, 0x02, 78, 24);
   }
-}
+}}
