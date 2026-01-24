@@ -1,6 +1,6 @@
 /* Keyboard driver. Originally wrote by Saulo Henrique in Friday, January 23rd, 2026.
 
-Last update: Saturday, January 24th, 2026, at 08:31 GMT-3 (Horário de Brasília)
+Last update: Saturday, January 24th, 2026, at 10:37 GMT-3 (Horário de Brasília)
 
 kbdriver.c*/
 
@@ -57,4 +57,18 @@ char get_key(){
       return inb(0x60);
   }
 return 0;
+}
+void keyboard_init() {
+    while (inb(0x64) & 0x02); 
+    outb(0x60, 0xF4);
+    
+    while (inb(0x64) & 0x02);
+    outb(0x64, 0x20);
+    while (!(inb(0x64) & 0x01));
+    unsigned char cb = inb(0x60);
+    cb |= 0x40;
+    while (inb(0x64) & 0x02);
+    outb(0x64, 0x60);
+    while (inb(0x64) & 0x02);
+    outb(0x60, cb);
 }
