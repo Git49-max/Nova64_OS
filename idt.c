@@ -31,6 +31,10 @@ void idt_init() {
     idtp.limit = (sizeof(struct idt_entry) * 256) - 1;
     idtp.base = (unsigned int)&idt;
 
+    for(int i = 0; i < 256; i++) {
+        idt_set_gate(i, 0, 0, 0);
+    }
+
     outb(0x20, 0x11);
     outb(0xA0, 0x11);
     outb(0x21, 0x20);
@@ -47,3 +51,4 @@ void idt_init() {
     idt_load();
     asm volatile("sti");
 }
+
