@@ -7,28 +7,25 @@ kernel.c */
 #include "rtcdriver.h"
 #include "kbdriver.h"
 #include "io.h"
-
 void main() {
     clear_screen();
     
     while (inb(0x64) & 0x01) { inb(0x60); }
     keyboard_init();
-    while (inb(0x64) & 0x01) { inb(0x60); }
 
-    print("Nova64 OS - Raw Keyboard Test", 0x02, 0, 0);
-    print("Scanning for scancodes...", 0x0F, 0, 1);
+    print("Nova64 OS - Keyboard Diagnostic", 0x02, 0, 0);
 
     while(1) {
         if (inb(0x64) & 0x01) {
             unsigned char scancode = inb(0x60);
             
-            print("Raw Scancode: ", 0x0F, 0, 3);
-            print_int(scancode, 0x0E, 14, 3);
+            print("Raw Code: ", 0x0F, 0, 3);
+            print_int(scancode, 0x0E, 10, 3);
 
             if (!(scancode & 0x80)) {
-                print("Last Map Char: ", 0x0F, 0, 5);
+                print("Mapped Char: ", 0x0F, 0, 5);
                 if (scancode < 128) {
-                    putc(keyboard_map[scancode], 0x0A, 15, 5);
+                    putc(keyboard_map[scancode], 0x0A, 13, 5);
                 }
             }
         }
