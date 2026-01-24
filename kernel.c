@@ -18,10 +18,11 @@ void main() {
     print(" System ready to further development", 0x02, 1, 1);
 
     while(1) {
-        char tecla = get_key();
+        // -- Keyboard module -- \\
+        char key = get_key();
         
-        if (tecla != 0) {
-            putc(tecla, 0x02, cursor_x, cursor_y);
+        if (key != 0) {
+            putc(key, 0x02, cursor_x, cursor_y);
             cursor_x++;
             
             if (cursor_x > 79) {
@@ -29,32 +30,32 @@ void main() {
                 cursor_y++;
             }
         }
-
+        // -- Time module -- \\
         get_time(&h, &m, &s);
 
         if (h < 10) {
-            putc('0', 0x02, 71, 0);
-            print_int(h, 0x02, 72, 0);
+            putc('0', 0x02, 71, 24);
+            print_int(h, 0x02, 72, 24);
         } else {
-            print_int(h, 0x02, 71, 0);
+            print_int(h, 0x02, 71, 24);
         }
 
-        putc(':', 0x02, 73, 0);
+        putc(':', 0x02, 73, 24);
 
         if (m < 10) {
-            putc('0', 0x02, 74, 0);
-            print_int(m, 0x02, 75, 0);
+            putc('0', 0x02, 74, 24);
+            print_int(m, 0x02, 75, 24);
         } else {
-            print_int(m, 0x02, 74, 0);
+            print_int(m, 0x02, 74, 24);
         }
 
-        putc(':', 0x02, 76, 0);
+        putc(':', 0x02, 76, 24);
 
         if (s < 10) {
-            putc('0', 0x02, 77, 0);
-            print_int(s, 0x02, 78, 0);
+            putc('0', 0x02, 77, 24);
+            print_int(s, 0x02, 78, 24);
         } else {
-            print_int(s, 0x02, 77, 0);
+            print_int(s, 0x02, 77, 24);
         }
     }
 }
