@@ -22,6 +22,7 @@ void main() {
         char key = get_key();
         
         if (key != 0) {
+            print("Detected key!", 0x0F, 0, 5);
             putc(key, 0x02, cursor_x, cursor_y);
             cursor_x++;
             
