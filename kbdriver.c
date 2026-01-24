@@ -7,8 +7,8 @@ kbdriver.c*/
 #include "io.h"
 #include "videodriver.h"
 
-int cursor_x = 0;
-int cursor_y = 2;
+extern int cursor_x;
+extern int cursor_y;
 
 unsigned char keyboard_map[128] = {
     0,  27, '1', '2', '3', '4', '5', '6', '7', '8',
@@ -23,16 +23,16 @@ unsigned char keyboard_map[128] = {
 
 void keyboard_handler() {
     unsigned char scancode = inb(0x60);
+
     if (!(scancode & 0x80)) {
-        if (scancode < 128) {
-            char key = keyboard_map[scancode];
-            if (key != 0) {
-                putc(key, 0x02, cursor_x, cursor_y);
-                cursor_x++;
-                if (cursor_x > 79) { cursor_x = 0; cursor_y++; }
-            }
+        char key = keyboard_map[scancode];
+        if (key != 0) {
+            putc(key, 0x02, cursor_x, cursor_y);
+            cursor_x++;
+            if (cursor_x > 79) { cursor_x = 0; cursor_y++; }
         }
     }
+    
     outb(0x20, 0x20);
 }
 
