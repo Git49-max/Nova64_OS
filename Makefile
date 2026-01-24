@@ -4,42 +4,35 @@
 
 #Makefile
 
-AS = nasm
 CC = gcc
+AS = nasm
 LD = ld
 
-ASFLAGS = -f bin
-AS_ELF_FLAGS = -f elf32
-CFLAGS = -m32 -ffreestanding -fno-pic -fno-pie -c
-LDFLAGS = -m elf_i386 -T linker.ld --oformat binary
+# Adicionei idt.o e idt_asm.o aqui
+KERNEL_OBJS = kernel.o idt_asm.o idt.o videodriver.o kbdriver.o rtcdriver.o io.o
 
-BOOT_SRC = boot.asm
-BOOT_BIN = boot.bin
-KERNEL_BIN = kernel.bin
-IMAGE = nova64.img
+CFLAGS = -m32 -ffreestanding -fno-stack-protector -fno-pie -c
+LDFLAGS = -m elf_i386 -T linker.ld
 
-KERNEL_OBJS = kernel.o videodriver.o rtcdriver.o io.o kbdriver.o idt.o idt_asm.o
+all: os-image.bin
 
-all: $(IMAGE)
+os-image.bin: boot.bin kernel.bin
+	cat boot.bin kernel.bin > os-image.bin
 
-$(IMAGE): $(BOOT_BIN) $(KERNEL_BIN)
-	cat $(BOOT_BIN) $(KERNEL_BIN) > $(IMAGE)
+boot.bin: boot.asm
+	$(AS) -f bin boot.asm -o boot.bin
 
-$(BOOT_BIN): $(BOOT_SRC)
-	$(AS) $(ASFLAGS) $(BOOT_SRC) -o $(BOOT_BIN)
+kernel.bin: $(KERNEL_OBJS)
+	$(LD) $(LDFLAGS) -o kernel.bin $(KERNEL_OBJS) --oformat binary
 
+# Regra para o assembly da IDT
 idt_asm.o: idt_asm.asm
-	$(AS) $(AS_ELF_FLAGS) idt_asm.asm -o idt_asm.o
+	$(AS) -f elf32 idt_asm.asm -o idt_asm.o
 
 %.o: %.c
 	$(CC) $(CFLAGS) $< -o $@
 
-$(KERNEL_BIN): $(KERNEL_OBJS)
-	$(LD) $(LDFLAGS) -o $(KERNEL_BIN) $(KERNEL_OBJS)
-
 clean:
-	rm -f *.o *.bin *.img
+	rm -f *.bin *.o
 
-run: $(IMAGE)
-	qemu-system-i386 -drive format=raw,file=$(IMAGE)
 
