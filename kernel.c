@@ -13,20 +13,23 @@ void main() {
     while (inb(0x64) & 0x01) { inb(0x60); }
     keyboard_init();
 
-    print("Nova64 OS - Diagnostic Mode", 0x02, 0, 0);
+    print("Nova64 OS - Hardware Test", 0x02, 0, 0);
+    print("Wait for scancode...", 0x0F, 0, 1);
 
     while(1) {
         if (inb(0x64) & 0x01) {
             unsigned char sc = inb(0x60);
             
-            print("Raw: ", 0x0F, 0, 3);
+            print("Hex: ", 0x0F, 0, 3);
             print_int(sc, 0x0E, 5, 3);
 
-            if (!(sc & 0x80) && sc < 128) {
-                char c = keyboard_map[sc];
+            if (!(sc & 0x80)) {
                 print("Char: ", 0x0F, 0, 5);
-                putc(c, 0x0A, 6, 5);
+                if (sc < 128) {
+                    putc(keyboard_map[sc], 0x0A, 6, 5);
+                }
             }
         }
     }
 }
+
