@@ -49,8 +49,13 @@ unsigned char keyboard_map[128] = {
 
 void keyboard_init() {
     while (inb(0x64) & 0x02);
+    outb(0x64, 0xA7);
+
+    while (inb(0x64) & 0x02);
+    outb(0x64, 0xAE);
+
+    while (inb(0x64) & 0x02);
     outb(0x60, 0xF4);
-    
     while (!(inb(0x64) & 0x01));
     inb(0x60);
 
