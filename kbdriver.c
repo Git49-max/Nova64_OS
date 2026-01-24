@@ -50,10 +50,11 @@ unsigned char keyboard_map[128] = {
 char get_key(){
   unsigned char status = inb(0x64);
   if(status & 0x01){
-      unsigned char scancode = inb(0x60);
-      if(scancode < 80){
-           return keyboard_map[scancode];
-      }
+ //     unsigned char scancode = inb(0x60);
+  //    if(scancode < 80){
+  //         return keyboard_map[scancode];
+    //  }
+      return inb(0x60);
   }
 return 0;
 }
