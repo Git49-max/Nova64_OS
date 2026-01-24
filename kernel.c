@@ -1,11 +1,12 @@
 /* Basic kernel for Nova64 OS. Originally wrote by Saulo Henrique in Thursday, January 22nd, 2026.
-Last update: Saturday, January 24th, 2026, at 08:33 GMT-3 (Horário de Brasília)
+Last update: Saturday, January 24th, 2026, at 10:23 GMT-3 (Horário de Brasília)
 
 kernel.c */
 
 #include "videodriver.h"
 #include "rtcdriver.h"
 #include "kbdriver.h"
+#include "io.h"
 
 void main() {
     clear_screen();
