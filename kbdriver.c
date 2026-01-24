@@ -36,5 +36,11 @@ void keyboard_handler() {
     outb(0x20, 0x20);
 }
 
+void keyboard_init() {
+    while (inb(0x64) & 0x02);
+    outb(0x60, 0xF4);
+}
+
+
 
 
