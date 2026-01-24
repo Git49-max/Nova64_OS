@@ -18,7 +18,7 @@ void main() {
     print(" System ready to further development", 0x02, 1, 1);
 
     while(1) {
-        // -- Keyboard module -- \\
+        // -- Keyboard module --
         char key = get_key();
         
         if (key != 0) {
@@ -31,7 +31,7 @@ void main() {
                 cursor_y++;
             }
         }
-        // -- Time module -- \\
+        // -- Time module -- 
         get_time(&h, &m, &s);
 
         if (h < 10) {
