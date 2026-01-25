@@ -1,6 +1,6 @@
 #Makefile for Nova64 OS. Originally wrote by Saulo Henrique in Thursday, January 22nd, 2026.
 
-#Last update: Saturday, January 24th, 2026, at 12:15 GMT-3 (Horário de Brasília)
+#Last update: Sunday, January 25th, 2026, at 14:58 GMT-3 (Horário de Brasília)
 
 #Makefile
 
@@ -8,28 +8,47 @@ CC = gcc
 AS = nasm
 LD = ld
 
-# Adicionei idt.o e idt_asm.o aqui
-KERNEL_OBJS = kernel.o idt_asm.o idt.o videodriver.o kbdriver.o rtcdriver.o io.o
+INC_DIR = include
+SRC_DIR = src
+UTIL_DIR = utils
 
-CFLAGS = -m32 -ffreestanding -fno-stack-protector -fno-pie -c
+CFLAGS = -m32 -ffreestanding -fno-stack-protector -fno-pie \
+         -I$(INC_DIR) -I$(UTIL_DIR) -c
+
 LDFLAGS = -m elf_i386 -T linker.ld
 
-all: os-image.bin
+KERNEL_OBJS = kernel.o idt_asm.o idt.o videodriver.o kbdriver.o rtcdriver.o io.o
 
-os-image.bin: boot.bin kernel.bin
-	cat boot.bin kernel.bin > os-image.bin
+all: nova64.img
 
-boot.bin: boot.asm
-	$(AS) -f bin boot.asm -o boot.bin
+nova64.img: boot.bin kernel.bin
+	cat boot.bin kernel.bin > nova64.img
+
+boot.bin: $(SRC_DIR)/boot/boot.asm
+	$(AS) -f bin $< -o $@
 
 kernel.bin: $(KERNEL_OBJS)
-	$(LD) $(LDFLAGS) -o kernel.bin $(KERNEL_OBJS) --oformat binary
+	$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJS) --oformat binary
 
-# Regra para o assembly da IDT
-idt_asm.o: idt_asm.asm
-	$(AS) -f elf32 idt_asm.asm -o idt_asm.o
+kernel.o: $(SRC_DIR)/kernel/kernel.c
+	$(CC) $(CFLAGS) $< -o $@
 
-%.o: %.c
+videodriver.o: $(SRC_DIR)/drivers/VGA/videodriver.c
+	$(CC) $(CFLAGS) $< -o $@
+
+kbdriver.o: $(SRC_DIR)/drivers/keyboard/kbdriver.c
+	$(CC) $(CFLAGS) $< -o $@
+
+rtcdriver.o: $(SRC_DIR)/drivers/RTC/rtcdriver.c
+	$(CC) $(CFLAGS) $< -o $@
+
+idt.o: $(UTIL_DIR)/idt.c
+	$(CC) $(CFLAGS) $< -o $@
+
+idt_asm.o: $(UTIL_DIR)/idt_asm.asm
+	$(AS) -f elf32 $< -o $@
+
+io.o: $(UTIL_DIR)/io.c
 	$(CC) $(CFLAGS) $< -o $@
 
 clean:

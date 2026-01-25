@@ -8,6 +8,9 @@ videodriver.c
 
 #define vidAdr 0xB8000
 
+int cursor_X = 0;
+int cursor_y = 2;
+
 void itoa(int n, char *str) {
     int i = 0;
     if (n == 0) {
