@@ -25,7 +25,7 @@ nova64.img: boot.bin kernel.bin
 	cat boot.bin kernel.bin > nova64.img
 
 boot.bin: $(SRC_DIR)/boot/boot.asm
-	$(AS) -f bin $< -o $@
+	$(AS) -f bin $< -o $@ -i$(SRC_DIR)/boot/
 
 kernel.bin: $(KERNEL_OBJS)
 	$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJS) --oformat binary
@@ -54,4 +54,6 @@ io.o: $(UTIL_DIR)/io.c
 clean:
 	rm -f *.bin *.o
 
+run: all
+	qemu-system-i386 -drive format=raw,file=nova64.img -vga std
 
