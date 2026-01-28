@@ -1,10 +1,13 @@
 /* Real Time Clock driver for Nova64 OS. Originally wrote by Saulo Henrique in Friday, January 23rd, 2026.
 
-Last update: Friday, January 23rd, 2026, at 16:56 GMT-3 (Horário de Brasília)
+Last update: Sunday, January 25th, 2026, at 18:36 GMT-3 (Horário de Brasília)
 
 rtcdriver.c*/
 
 #include "io.h"
+
+extern int current_tz_offset; 
+
 unsigned char get_rtc_register(int reg) {
     outb(0x70, reg);
     return inb(0x71);
@@ -24,5 +27,16 @@ void get_time(int *h, int *m, int *s) {
 
     *s = (rs & 0x0F) + ((rs / 16) * 10);
     *m = (rm & 0x0F) + ((rm / 16) * 10);
-    *h = (rh & 0x0F) + ((rh / 16) * 10);
+    
+    int raw_h = (rh & 0x0F) + ((rh / 16) * 10);
+
+    int adjusted_h = raw_h + current_tz_offset;
+
+    if (adjusted_h >= 24) {
+        adjusted_h -= 24;
+    } else if (adjusted_h < 0) {
+        adjusted_h += 24;
+    }
+
+    *h = adjusted_h;
 }

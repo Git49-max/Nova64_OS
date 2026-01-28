@@ -1,6 +1,6 @@
 #Makefile for Nova64 OS. Originally wrote by Saulo Henrique in Thursday, January 22nd, 2026.
 
-#Last update: Sunday, January 25th, 2026, at 14:58 GMT-3 (Horário de Brasília)
+#Last update: Sunday, January 25th, 2026, at 16:05 GMT-3 (Horário de Brasília)
 
 #Makefile
 
@@ -12,12 +12,13 @@ INC_DIR = include
 SRC_DIR = src
 UTIL_DIR = utils
 
+
 CFLAGS = -m32 -ffreestanding -fno-stack-protector -fno-pie \
-         -I$(INC_DIR) -I$(UTIL_DIR) -c
+         -I$(INC_DIR) -I$(UTIL_DIR) -I$(INC_DIR)/utils -I. -c
 
 LDFLAGS = -m elf_i386 -T linker.ld
 
-KERNEL_OBJS = kernel.o idt_asm.o idt.o videodriver.o kbdriver.o rtcdriver.o io.o
+KERNEL_OBJS = kernel.o idt_asm.o idt.o videodriver.o kbdriver.o rtcdriver.o io.o string.o shell.o config.o
 
 all: nova64.img
 
@@ -51,9 +52,20 @@ idt_asm.o: $(UTIL_DIR)/idt_asm.asm
 io.o: $(UTIL_DIR)/io.c
 	$(CC) $(CFLAGS) $< -o $@
 
+shell.o: $(SRC_DIR)/shell/shell.c
+	$(CC) $(CFLAGS) $< -o $@
+
+string.o: $(SRC_DIR)/utils/string.c
+	$(CC) $(CFLAGS) $< -o $@
+
+config.o: $(SRC_DIR)/utils/config.c
+	$(CC) $(CFLAGS) $< -o $@
+
 clean:
 	rm -f *.bin *.o
 
 run: all
 	qemu-system-i386 -drive format=raw,file=nova64.img -vga std
+
+
 

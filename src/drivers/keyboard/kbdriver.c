@@ -1,16 +1,17 @@
-/* Keyboard driver. Originally wrote by Saulo Henrique in Friday, January 23rd, 2026.
-
-Last update: Sunday, January 25th, 2026, at 15:38 GMT-3 (Horário de Brasília)
-
-kbdriver.c*/
-
 #include "io.h"
 #include "VGA/videodriver.h"
+#include "utils/string.h"
+#include "shell/shell.h"
+#include "utils/config.h"
 
 extern int cursor_x;
 extern int cursor_y;
+extern int config_status;
 
 int shift_pressed = 0;
+int shell_active = 0;
+int config_active = 0;
+String key_buffer;
 
 unsigned char keyboard_map[128] = {
     0,  27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
@@ -40,18 +41,77 @@ void keyboard_handler() {
         return;
     }
 
-    if (scancode == 0x0E) {
-        if (cursor_x > 1) { 
-            cursor_x--;
-            putc(' ', 0x02, cursor_x, cursor_y); 
-        }
-        return;
-    }
-
-    // Caracteres normais
     char c = shift_pressed ? keyboard_map_shift[scancode] : keyboard_map[scancode];
-    
-    if (c > 0 && c != '\b') {
+
+    if (c == '\n') {
+        if (strcmp(key_buffer.data, "shell32.start") == 0 && config_active == 0) {
+            shell_active = 1;
+            bashinit();
+            string_clear(&key_buffer);
+            return;
+        }
+
+        if (strcmp(key_buffer.data, "1") == 0 && shell_active == 0 && config_active == 0){
+            start_config();
+            config_active = 1;
+            string_clear(&key_buffer);
+            return;
+        }
+
+        if (config_active == 1) {
+            if (config_status == 1) {
+                update_user(key_buffer.data);
+                string_clear(&key_buffer);
+                start_config();
+                return;
+            } 
+            else if (config_status == 2) {
+                update_tz_by_name(key_buffer.data);
+                string_clear(&key_buffer);
+                start_config();
+                return;
+            } 
+            else if (config_status == 3) {
+                if (strcmp(key_buffer.data, "exit") == 0) {
+                    config_active = 0;
+                    clear_screen();
+                    print("Nova64 OS", 0x0B, 0, 0);
+                    cursor_x = 0;
+                    cursor_y = 1;
+                    string_clear(&key_buffer);
+                    putc('>', 0x0F, cursor_x, cursor_y);
+                    cursor_x++;
+                    return;
+                }
+            }
+        }
+
+        if (shell_active && config_active == 0) {
+            exeCommand(key_buffer);
+        } else if (config_active == 0) {
+            cursor_y++;
+            cursor_x = 0;
+            print("Type 'shell32.start' to use the terminal.", 0x07, cursor_x, cursor_y);
+        }
+
+        string_clear(&key_buffer);
+        cursor_x = 0;
+        cursor_y++;
+        putc('>', 0x02, cursor_x, cursor_y);
+        cursor_x++;
+    } 
+    else if (c == '\b') {
+        if (key_buffer.length > 0) {
+            key_buffer.length--;
+            key_buffer.data[key_buffer.length] = '\0';
+            if (cursor_x > 0) {
+                cursor_x--;
+                putc(' ', 0x02, cursor_x, cursor_y);
+            }
+        }
+    } 
+    else if (c > 0) {
+        string_append(&key_buffer, c);
         putc(c, 0x02, cursor_x, cursor_y);
         cursor_x++;
         if (cursor_x >= 80) {
@@ -62,9 +122,6 @@ void keyboard_handler() {
 }
 
 void keyboard_init() {
+    string_clear(&key_buffer);
     while (inb(0x64) & 0x01) inb(0x60);
 }
-
-
-
-

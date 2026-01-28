@@ -6,6 +6,9 @@ kbdriver.h*/
 
 #ifndef KBDRIVER_H
 #define KBDRIVER_H
+#include "utils/string.h"
+
+extern String key_buffer;
 
 void keyboard_init();
 void keyboard_handler();
