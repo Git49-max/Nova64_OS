@@ -3,6 +3,7 @@
 #include "utils/string.h"
 #include "RTC/rtcdriver.h"
 #include "kernel/kernel.h"
+#include "utils/io.h"
 
 extern int cursor_x;
 extern int cursor_y;
@@ -87,6 +88,10 @@ void exeCommand(String key_buffer){
         cursor_y = 2;
     } else if(strcmp(key_buffer.data, "neofetch") == 0){
         display_neofetch();
+    } else if(strcmp(key_buffer.data, "power --restart") == 0){
+        reboot();
+    } else if(strcmp(key_buffer.data, "power --off") == 0){
+        shutdown();
     }
     else {
         print("COMMAND NOT FOUND! err404", 0x0C, 0, cursor_y);

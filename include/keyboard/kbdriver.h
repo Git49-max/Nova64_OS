@@ -11,6 +11,7 @@ kbdriver.h*/
 extern String key_buffer;
 
 void keyboard_init();
+char get_input();
 void keyboard_handler();
 
 #endif

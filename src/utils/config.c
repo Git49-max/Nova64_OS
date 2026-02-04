@@ -49,12 +49,12 @@ void start_config(){
     print("Nova64 Initial Setup", 0x0B, 30, 0);
     
     if (config_status == 1) {
-        print("Choose your username: ", 0x01, 0, 1);
+        print("Choose your username: ", 0x09, 0, 1);
         cursor_x = 22;
         cursor_y = 1;
     } 
     else if (config_status == 2) {
-        print("Choose your time zone (GMT FORMAT!): ", 0x01, 0, 1);
+        print("Choose your time zone (GMT FORMAT!): ", 0x09, 0, 1);
         cursor_x = 38;
         cursor_y = 1;
     } 

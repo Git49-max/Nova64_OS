@@ -11,8 +11,8 @@ KERNEL_OFFSET equ 0x1000
 
 mov [BOOT_DRIVE], dl 
 
-; Configura a pilha
-mov bp, 0x9000
+
+mov bp, 0xFFFF
 mov sp, bp
 
 call load_kernel     
@@ -23,18 +23,18 @@ jmp $
 
 [bits 16]
 load_kernel:
-    mov ah, 0x00        ; Reset disco
+    mov ah, 0x00        
     int 0x13
     
     mov ax, 0x0000
     mov es, ax
     mov bx, KERNEL_OFFSET 
 
-    mov ah, 0x02        ; Ler setores
-    mov al, 32; Quantidade de setores do kernel
+    mov ah, 0x02        
+    mov al, 32; 
     mov ch, 0x00
     mov dh, 0x00
-    mov cl, 0x02        ; Começa no setor 2
+    mov cl, 0x02        
     mov dl, [BOOT_DRIVE]
     int 0x13
     ret
@@ -46,7 +46,7 @@ switch_to_pm:
     mov eax, cr0
     or eax, 0x1
     mov cr0, eax
-    jmp CODE_SEG:init_pm ; "Far jump" para limpar o cache 16-bit
+    jmp CODE_SEG:init_pm 
 
 [bits 32]
 init_pm:
@@ -57,7 +57,7 @@ init_pm:
     mov fs, ax
     mov gs, ax
 
-    call KERNEL_OFFSET   ; Pula para o C
+    call KERNEL_OFFSET   
     jmp $
 
 BOOT_DRIVE db 0

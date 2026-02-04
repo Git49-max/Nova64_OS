@@ -11,6 +11,7 @@ videodriver.h*/
 extern int cursor_x;
 extern int cursor_y;
 
+void draw_cursor(int x, int y, int show);
 void putc(char letter, unsigned char color, int x, int y);
 void print(char *str, unsigned char color, int x, int y);
 void print_int(int n, unsigned char color, int x, int y);

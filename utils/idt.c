@@ -17,6 +17,7 @@ struct idt_entry idt[256];
 struct idt_ptr idtp;
 
 extern void idt_load();
+extern void irq0();
 extern void irq1();
 extern void irq_common_stub();
 
@@ -46,6 +47,7 @@ void idt_init() {
     outb(0x21, 0xFC); 
     outb(0xA1, 0xFF);
 
+    idt_set_gate(32, (unsigned long)irq0, 0x08, 0x8E);
     idt_set_gate(33, (unsigned long)irq1, 0x08, 0x8E);
 
     idt_load();

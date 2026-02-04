@@ -72,3 +72,10 @@ void clear_screen() {
         vram[i+1] = 0x07;   
     }
 }
+void draw_cursor(int x, int y, int show) {
+    if (show) {
+        putc('|', 0x0F, x, y);
+    } else {
+        putc(' ', 0x0F, x, y);
+    }
+}

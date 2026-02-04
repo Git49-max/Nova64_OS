@@ -8,4 +8,7 @@ io.h*/
 #define IO_H
 void outb(unsigned short port, unsigned char val);
 unsigned char inb(unsigned short port);
+void outw(unsigned short port, unsigned short val);
+void reboot();
+void shutdown();
 #endif

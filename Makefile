@@ -18,7 +18,7 @@ CFLAGS = -m32 -ffreestanding -fno-stack-protector -fno-pie \
 
 LDFLAGS = -m elf_i386 -T linker.ld
 
-KERNEL_OBJS = kernel.o idt_asm.o idt.o videodriver.o kbdriver.o rtcdriver.o io.o string.o shell.o config.o
+KERNEL_OBJS = kernel.o idt_asm.o idt.o videodriver.o kbdriver.o rtcdriver.o pit.o io.o string.o shell.o config.o animations.o
 
 all: nova64.img
 
@@ -43,6 +43,12 @@ kbdriver.o: $(SRC_DIR)/drivers/keyboard/kbdriver.c
 rtcdriver.o: $(SRC_DIR)/drivers/RTC/rtcdriver.c
 	$(CC) $(CFLAGS) $< -o $@
 
+pit.o: $(SRC_DIR)/drivers/timer/pit.c
+	$(CC) $(CFLAGS) $< -o $@
+
+animations.o: $(SRC_DIR)/animations/animations.c
+	$(CC) $(CFLAGS) $< -o $@
+
 idt.o: $(UTIL_DIR)/idt.c
 	$(CC) $(CFLAGS) $< -o $@
 
@@ -60,6 +66,7 @@ string.o: $(SRC_DIR)/utils/string.c
 
 config.o: $(SRC_DIR)/utils/config.c
 	$(CC) $(CFLAGS) $< -o $@
+	
 
 clean:
 	rm -f *.bin *.o
