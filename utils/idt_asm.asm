@@ -1,44 +1,66 @@
-[bits 32]
-[global idt_load]
+[bits 64]
+[global idt_load_raw]
 [global irq0]
 [global irq1]
 [global irq_common_stub]
-[extern idtp]
-[extern keyboard_handler]
-[extern timer_handler]
+[extern irq0_handler]
+[extern irq1_handler]
+[extern common_irq_handler]
 
-idt_load:
-    lidt [idtp]
+idt_load_raw:
+    lidt [rdi]
     ret
 
+%macro pushall 0
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push rbp
+    push r8
+    push r9
+    push r10
+    push r11
+    push r12
+    push r13
+    push r14
+    push r15
+%endmacro
+
+%macro popall 0
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rbp
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+%endmacro
+
 irq0:
-    pusha          
-    push ds
-    push es
-    push fs
-    push gs
+    pushall
+    call irq0_handler
+    popall
+    iretq
 
-    call timer_handler
-
-    pop gs
-    pop fs
-    pop es
-    pop ds
-    mov al, 0x20
-    out 0x20, al
-    popa           
-    iretd
 irq1:
-    pusha
-    call keyboard_handler
-    mov al, 0x20
-    out 0x20, al
-    popa
-    iretd
+    pushall
+    call irq1_handler
+    popall
+    iretq
 
 irq_common_stub:
-    pusha
-    mov al, 0x20
-    out 0x20, al
-    popa
-    iretd
+    pushall
+    call common_irq_handler
+    popall
+    iretq

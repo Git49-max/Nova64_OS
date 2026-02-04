@@ -27,7 +27,7 @@ void display_neofetch() {
     print("Nova64 OS devV0.1 Alpha", 0x07, 5, cursor_y++);
     
     print(" KERNEL: ", 0x0B, 0, cursor_y);
-    print("x86_32 Monolithic", 0x07, 9, cursor_y++);
+    print("x86_64 Monolithic", 0x07, 9, cursor_y++);
     
     print(" SHELL: ", 0x0B, 0, cursor_y);
     print("NovaBash (shell32)", 0x07, 8, cursor_y++);
