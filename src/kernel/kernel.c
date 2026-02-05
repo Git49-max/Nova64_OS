@@ -7,6 +7,7 @@
 #include "utils/types.h"
 #include "timer/pit.h"
 #include "animations/animations.h"
+#include "stellar/stellar.h"
 
 // THE COLOR TABLE!
 /*
@@ -39,6 +40,8 @@ extern int config_active;
 String user;
 String time_zone;
 
+uint64_t stellar_stack[8192];
+
 __attribute__((section(".text.entry")))
 int main() {
     shell_active = 0;   
@@ -54,10 +57,12 @@ int main() {
     int h, m, s;
 
     keyboard_init();
-    
     idt_init();
     init_timer(100);
     __asm__ volatile ("sti");
+
+    // ----------------------------------
+
     welcome_animation();
     clear_screen();
 
@@ -71,7 +76,6 @@ int main() {
     int cursor_visible = 0;
     uint32_t last_blink = 0;
 
-     
     while(1) {
         get_time(&h, &m, &s);
         print_formatted_time(h, m, s, 72, 24);

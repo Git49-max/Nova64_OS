@@ -20,7 +20,7 @@ LDFLAGS = -m elf_x86_64 -T linker.ld -z max-page-size=0x1000
 # Adicionamos os novos objetos de boot do GRUB
 KERNEL_OBJS = multiboot_header.o boot_64.o kernel.o videodriver.o kbdriver.o \
               rtcdriver.o pit.o io.o string.o shell.o config.o animations.o \
-              idt.o idt_asm.o irq_stubs.o irq1_stubs.o
+              idt.o idt_asm.o irq_stubs.o irq1_stubs.o stellar.o
 
 all: nova64.iso
 
@@ -88,8 +88,14 @@ irq_stubs.o: utils/irq_stubs.asm
 
 irq1_stubs.o: utils/irq1_stubs.asm
 	$(AS) -f elf64 $< -o $@
+
+stellar.o: $(SRC_DIR)/stellar/stellar.c
+	$(CC) $(CFLAGS) $< -o $@
 clean:
-	rm -rf *.bin *.o *.iso isodir
+	rm -rf *.bin *.o isodir
 
 run: all
 	qemu-system-x86_64 -cdrom nova64.iso -vga std -d int,cpu_reset -D qemu.log
+
+stellar:
+	gcc -DSTELLAR_HOST -fno-builtin -I./include src/tools/host_main.c -o stellar
