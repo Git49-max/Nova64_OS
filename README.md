@@ -1,6 +1,6 @@
 # Nova64_OS  
-![Version](https://img.shields.io/badge/version-devV0.1--Alpha-blue)
-![Platform](https://img.shields.io/badge/platform-x86__32-lightblue)
+![Version](https://img.shields.io/badge/version-"Aurora"-blue)
+![Platform](https://img.shields.io/badge/platform-x86__64-lightblue)
 ![C](https://img.shields.io/badge/Kernel_language-C-blue)
 ![Last Commit](https://img.shields.io/github/last-commit/SauloHS/Nova64_OS)
 ![Repo Size](https://img.shields.io/github/repo-size/SauloHS/Nova64_OS)
@@ -11,7 +11,7 @@
 
 ## Current resources
 * **Bootloader**
-  * Coded in assembly, a basic bootloader and GDT to jump from real mode (16 bits) to protected mode (32 bits).
+  * The bootloader is GRUB, jumping to 64 bits (long mode)
 * **Drivers**
   * RTC
     * A basic RTC (Real Time Clock) driver with adjustables time zones.
@@ -19,10 +19,12 @@
     * A video driver for text mode (80x25) with some basic functions, such as print, putc and print_int.
   * Keyboard
     * A keyboard driver with a basic translation table.
+  * PIT
+    * A Programmable Interval Timer, with a sleep function
 * **Shell**
-  * A basic shell with 4 commands.
+  * A basic shell with some commands.
 * **Kernel**
-  * A x86_32 Monolithic kernel that handles all the drivers.
+  * A x86_64 Monolithic kernel that handles all the drivers.
 
 ## How to compile
 1. Clone the repository: ```git clone https://github.com/SauloHS/Nova64_OS.git```
