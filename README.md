@@ -62,3 +62,5 @@ WSL is Windows Subsystem for Linux. You can install following this:
 1. Search for "Enable or disable Windows features" in the search bar, and enable "Virtual Machine Platform" and "Windows Subsystem for Linux". Then, restart your computer.
 2. Again, in the search bar, search for "Powershell". Click on "Open as an Administrator", and run the following command: `wsl --install`. It will install ubuntu in your machine. Complete the initial setup, and you can compile using the tutorial.
 
+## Showcase
+https://github.com/user-attachments/assets/e2fc0610-644b-4619-9f82-7baa294bec09
