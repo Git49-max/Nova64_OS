@@ -28,22 +28,15 @@
 
 ## How to compile
 1. Clone the repository: ```git clone https://github.com/SauloHS/Nova64_OS.git```
-2. To compile, you need to install the following packages: `nasm`, `gcc multilib`, `g++-multilib`, `binutils`, `build-essential`, `qemu-system-x86` and `make`, which can be easyly installed via the following code:
+2. To compile, you need to install the following packages: ```build-essential, gcc, nasm, binutils, grub-common, grub-pc-bin, xorriso, mtools, qemu-system-x86``` and `make`, which can be easyly installed via the following code:
 3. ```bash
-   sudo apt update && sudo apt install -y \
-    build-essential \
-    nasm \
-    gcc-multilib \
-    g++-multilib \
-    binutils \
-    qemu-system-x86 \
-    make
+   sudo apt install build-essential, gcc, nasm, binutils, grub-common, grub-pc-bin, xorriso, mtools, qemu-system-x86
    ```
    **THIS CODE ONLY WORKS FOR LINUX!** If you want to see how to compile in windows, see [wsl](#wsl).
 4. After installing all of the packages, you can compile by running ```make``` in the root directory. You can add ```run``` to, after compiling, automatically open QEMU with the image generated, and ```clean``` to remove any binary file, except the image, resulted by the compilation process. I recommend you to use ```make run clean```.
 
 ## Why isn't the OS working on my computer?
-In emulators, the OS **will work for sure**, if you use the latest commit. In real hardwares, the chances of it not working are quite high. The most common causes aren't your fault, and the only thing you can do is change the source code (that's what I'm doing).
+In emulators, the OS **will work for sure**, if you use the latest stable release. In real hardwares, the chances of it not working are quite high. The most common causes aren't your fault, and the only thing you can do is change the source code (that's what I'm doing).
 # The Most Common Causes:
 * BIOS x UEFI
   * For reasons of ease and simplicity our actual bootloader uses BIOS. The most recent computers (starting in the 2000s) uses UEFI. Many of them, don't have `Legacy Support` or `CSM`, so they can't run BIOS code.
