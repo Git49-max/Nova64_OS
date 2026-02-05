@@ -3,5 +3,9 @@ videodriver.o
 *.o
 boot.bin
 nova64.img
+stellar
 *.bin
 *.img
+*.iso
+*.exe
+*.ste
