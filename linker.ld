@@ -1,24 +1,25 @@
-ENTRY(main)
+ENTRY(start)
 
 SECTIONS
 {
-    
-    . = 0x8000;
+    . = 1M;
 
-    .text : AT(0x8000)
+    .boot :
     {
-        *(.text.entry)     
-        *(.text)
+        KEEP(*(.multiboot_header))
     }
 
-    .rodata : ALIGN(4K) { *(.rodata) }
-    .data   : ALIGN(4K) { *(.data) }
-    .bss    : ALIGN(4K) { *(.bss) *(COMMON) }
-
-    /DISCARD/ :
+    .text :
     {
-        *(.note.gnu.property)
-        *(.comment)
-        *(.eh_frame)
+        *(.text .text.*)
+    }
+
+    .rodata : { *(.rodata .rodata.*) }
+    .data   : { *(.data .data.*) }
+
+    .bss :
+    {
+        *(.bss .bss.*)
+        *(COMMON)
     }
 }

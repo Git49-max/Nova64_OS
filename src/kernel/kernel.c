@@ -54,12 +54,10 @@ int main() {
     int h, m, s;
 
     keyboard_init();
-    clear_screen(); // Vermelho brilhante
-    print("TESTE DE COMPILACAO", 0x4F, 0, 0);
     
     idt_init();
     init_timer(100);
-
+    __asm__ volatile ("sti");
     welcome_animation();
     clear_screen();
 
@@ -73,9 +71,10 @@ int main() {
     int cursor_visible = 0;
     uint32_t last_blink = 0;
 
+     
     while(1) {
         get_time(&h, &m, &s);
-        print_formatted_time(h, m, s, 72, 0);
+        print_formatted_time(h, m, s, 72, 24);
 
         if (timer_ticks - last_blink >= 50) {
             cursor_visible = !cursor_visible;

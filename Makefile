@@ -6,32 +6,47 @@ LD = ld
 INC_DIR = include
 SRC_DIR = src
 UTIL_DIR = utils
+BOOT_DIR = $(SRC_DIR)/boot
 
-# Adicionei caminhos específicos para evitar o erro de "No such file or directory"
-# O -I. permite que ele ache arquivos na raiz do projeto (como types.h se estiver lá)
 CFLAGS = -m64 -ffreestanding -fno-stack-protector -fno-pie -fno-pic \
-         -mno-red-zone -mcmodel=large \
+         -mno-red-zone -Iinclude -c \
          -I$(INC_DIR) -I$(UTIL_DIR) -I$(INC_DIR)/utils -I$(INC_DIR)/timer \
          -I$(INC_DIR)/VGA -I$(INC_DIR)/keyboard -I$(INC_DIR)/RTC -I$(INC_DIR)/shell \
          -I. -c
 
+# Removemos o --oformat binary porque o GRUB precisa do arquivo ELF completo
 LDFLAGS = -m elf_x86_64 -T linker.ld -z max-page-size=0x1000
 
-KERNEL_OBJS = kernel.o videodriver.o kbdriver.o rtcdriver.o pit.o io.o string.o shell.o config.o animations.o idt.o idt_asm.o
+# Adicionamos os novos objetos de boot do GRUB
+KERNEL_OBJS = multiboot_header.o boot_64.o kernel.o videodriver.o kbdriver.o \
+              rtcdriver.o pit.o io.o string.o shell.o config.o animations.o \
+              idt.o idt_asm.o irq_stubs.o irq1_stubs.o
 
-all: nova64.img
+all: nova64.iso
 
-nova64.img: boot.bin kernel.bin
-	cat boot.bin kernel.bin > nova64.img
-	truncate -s +64K nova64.img 
-
-boot.bin: $(SRC_DIR)/boot/boot.asm
-	$(AS) -f bin $< -o $@ -i$(SRC_DIR)/boot/
+# Cria a ISO bootável
+nova64.iso: kernel.bin
+	mkdir -p isodir/boot/grub
+	cp kernel.bin isodir/boot/kernel.bin
+	echo 'set timeout=0' > isodir/boot/grub/grub.cfg
+	echo 'set default=0' >> isodir/boot/grub/grub.cfg
+	echo 'menuentry "Nova64 OS" {' >> isodir/boot/grub/grub.cfg
+	echo '    multiboot2 /boot/kernel.bin' >> isodir/boot/grub/grub.cfg
+	echo '    boot' >> isodir/boot/grub/grub.cfg
+	echo '}' >> isodir/boot/grub/grub.cfg
+	grub-mkrescue -o nova64.iso isodir
 
 kernel.bin: $(KERNEL_OBJS)
-	$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJS) --oformat binary
+	$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJS)
 
-# Objetos do Kernel e Utils
+# --- Objetos de Boot (NOVOS) ---
+multiboot_header.o: $(BOOT_DIR)/multiboot_header.asm
+	$(AS) -f elf64 $< -o $@
+
+boot_64.o: $(BOOT_DIR)/boot_64.asm
+	$(AS) -f elf64 $< -o $@
+
+# --- Objetos do Kernel e Utils ---
 kernel.o: $(SRC_DIR)/kernel/kernel.c
 	$(CC) $(CFLAGS) $< -o $@
 
@@ -68,8 +83,13 @@ string.o: $(SRC_DIR)/utils/string.c
 config.o: $(SRC_DIR)/utils/config.c
 	$(CC) $(CFLAGS) $< -o $@
 
+irq_stubs.o: utils/irq_stubs.asm
+	$(AS) -f elf64 $< -o $@
+
+irq1_stubs.o: utils/irq1_stubs.asm
+	$(AS) -f elf64 $< -o $@
 clean:
-	rm -f *.bin *.o 
+	rm -rf *.bin *.o *.iso isodir
 
 run: all
-	qemu-system-x86_64 -drive format=raw,file=nova64.img -vga std -d int,cpu_reset -D qemu.log -no-reboot -no-shutdown
+	qemu-system-x86_64 -cdrom nova64.iso -vga std -d int,cpu_reset -D qemu.log
