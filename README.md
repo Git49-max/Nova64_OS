@@ -1,6 +1,6 @@
 # Nova64_OS  
-![Version](https://img.shields.io/badge/version-devV0.1--Alpha-blue)
-![Platform](https://img.shields.io/badge/platform-x86__32-lightblue)
+![Version](https://img.shields.io/badge/version-"Aurora"-blue)
+![Platform](https://img.shields.io/badge/platform-x86__64-lightblue)
 ![C](https://img.shields.io/badge/Kernel_language-C-blue)
 ![Last Commit](https://img.shields.io/github/last-commit/SauloHS/Nova64_OS)
 ![Repo Size](https://img.shields.io/github/repo-size/SauloHS/Nova64_OS)
@@ -11,7 +11,7 @@
 
 ## Current resources
 * **Bootloader**
-  * Coded in assembly, a basic bootloader and GDT to jump from real mode (16 bits) to protected mode (32 bits).
+  * The bootloader is GRUB, jumping to 64 bits (long mode)
 * **Drivers**
   * RTC
     * A basic RTC (Real Time Clock) driver with adjustables time zones.
@@ -19,29 +19,28 @@
     * A video driver for text mode (80x25) with some basic functions, such as print, putc and print_int.
   * Keyboard
     * A keyboard driver with a basic translation table.
+  * PIT
+    * A Programmable Interval Timer, with a sleep function
 * **Shell**
-  * A basic shell with 4 commands.
+  * A basic shell with some commands.
 * **Kernel**
-  * A x86_32 Monolithic kernel that handles all the drivers.
+  * A x86_64 Monolithic kernel that handles all the drivers.
+
+## Exe
+We choose to use .exe as our executable file. It is NOT as Windows exe. It contains the bytecode for Stellar VM run. The kernel will ONLY run apps wrote in Stellar.
 
 ## How to compile
 1. Clone the repository: ```git clone https://github.com/SauloHS/Nova64_OS.git```
-2. To compile, you need to install the following packages: `nasm`, `gcc multilib`, `g++-multilib`, `binutils`, `build-essential`, `qemu-system-x86` and `make`, which can be easyly installed via the following code:
+2. To compile, you need to install the following packages: ```build-essential, gcc, nasm, binutils, grub-common, grub-pc-bin, xorriso, mtools, qemu-system-x86``` and `make`, which can be easyly installed via the following code:
 3. ```bash
-   sudo apt update && sudo apt install -y \
-    build-essential \
-    nasm \
-    gcc-multilib \
-    g++-multilib \
-    binutils \
-    qemu-system-x86 \
-    make
+   sudo apt install build-essential, gcc, nasm, binutils, grub-common, grub-pc-bin, xorriso, mtools, qemu-system-x86
    ```
    **THIS CODE ONLY WORKS FOR LINUX!** If you want to see how to compile in windows, see [wsl](#wsl).
+4. Before compiling, you need to mount a disk. See [disk](#disk)
 4. After installing all of the packages, you can compile by running ```make``` in the root directory. You can add ```run``` to, after compiling, automatically open QEMU with the image generated, and ```clean``` to remove any binary file, except the image, resulted by the compilation process. I recommend you to use ```make run clean```.
 
 ## Why isn't the OS working on my computer?
-In emulators, the OS **will work for sure**, if you use the latest commit. In real hardwares, the chances of it not working are quite high. The most common causes aren't your fault, and the only thing you can do is change the source code (that's what I'm doing).
+In emulators, the OS **will work for sure**, if you use the latest stable release. In real hardwares, the chances of it not working are quite high. The most common causes aren't your fault, and the only thing you can do is change the source code (that's what I'm doing).
 # The Most Common Causes:
 * BIOS x UEFI
   * For reasons of ease and simplicity our actual bootloader uses BIOS. The most recent computers (starting in the 2000s) uses UEFI. Many of them, don't have `Legacy Support` or `CSM`, so they can't run BIOS code.
@@ -53,6 +52,20 @@ In emulators, the OS **will work for sure**, if you use the latest commit. In re
 The only way you can know for sure your PC is compatible, is by running the OS. But, there are 2 things you can do:
 1. If you use windows, you **need** to disable `Secure Boot`. It is an option in the BIOS of your computer that don't allow any OS unsigned by Microsoft boot in your computer.
 2. You can check if your PC has `Legacy support` or `CSM`. If not, we have a bad news for you.
+
+
+## Disk
+
+To mount the disk, we need to execute a series of commands. If you want an empty disk, you can run `dd if=/dev/zero of=disk.img bs=1M count=32` and then `mkfs.vfat -F 32 disk.img` and there is the FAT32 disk. But, if you want, you can code an .ste (Stellar language), compile it and create a disk that contains the [.exe](#exe) in it.
+
+1. Mount the disk normally `dd if=/dev/zero of=disk.img bs=1M count=32` and `mkfs.vfat -F 32 disk.img`
+2. NOTE: This version only runs your executable if it's named "calculo.exe". Stellar is in development stage, so there are only a few tokens. Create a file named "calculo.ste", and put something like: ```
+a = 10
+b = a / 3
+print(a + b) ```.
+The repository has Stellar compiled, so just run `./stellar calculo.ste`. It will print the results of your code (or not, if you didn't put a `print()` call), but more importantly, it will generate "calculo.exe".
+3. Run the following commands: `mkdir mnt`, `sudo mount -o loop disk.img mnt`, `sudo cp calculo.exe`, `sudo umount mnt`.
+4. If everything is correct, you're good to go! Just mae sure you type stellar in the shell.
 
 ## WSL
 

@@ -72,3 +72,34 @@ void draw_cursor(int x, int y, int show) {
         putc(' ', 0x0F, x, y);
     }
 }
+void print_double(double val, int precision, int color, int x, int y) {
+    // 1. Trata números negativos
+    if (val < 0) {
+        putc('-', color, x++, y);
+        val = -val;
+    }
+
+    // 2. Imprime a parte inteira usando sua print_int já existente
+    long long integral_part = (long long)val;
+    print_int(integral_part, color, x, y);
+    
+    // Move o cursor para depois da parte inteira (aproximadamente)
+    // Uma forma simples é contar os dígitos, mas vamos apenas avançar o x
+    // Para simplificar no Nova64, vamos estimar o avanço do x:
+    long long temp = integral_part;
+    if (temp == 0) x++;
+    else while (temp > 0) { temp /= 10; x++; }
+    if (integral_part == 0) x++; // Ajuste para o zero
+
+    // 3. Imprime o ponto decimal
+    putc('.', color, x++, y);
+
+    // 4. Calcula e imprime a parte decimal
+    double fractional_part = val - (double)integral_part;
+    for (int i = 0; i < precision; i++) {
+        fractional_part *= 10;
+        int digit = (int)fractional_part;
+        putc(digit + '0', color, x++, y);
+        fractional_part -= digit;
+    }
+}

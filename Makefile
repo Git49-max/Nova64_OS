@@ -20,7 +20,8 @@ LDFLAGS = -m elf_x86_64 -T linker.ld -z max-page-size=0x1000
 # Adicionamos os novos objetos de boot do GRUB
 KERNEL_OBJS = multiboot_header.o boot_64.o kernel.o videodriver.o kbdriver.o \
               rtcdriver.o pit.o io.o string.o shell.o config.o animations.o \
-              idt.o idt_asm.o irq_stubs.o irq1_stubs.o stellar.o
+              idt.o idt_asm.o irq_stubs.o irq1_stubs.o stellar.o pmm.o malloc.o \
+			  fat32.o ata.o
 
 all: nova64.iso
 
@@ -62,6 +63,9 @@ rtcdriver.o: $(SRC_DIR)/drivers/RTC/rtcdriver.c
 pit.o: $(SRC_DIR)/drivers/timer/pit.c
 	$(CC) $(CFLAGS) $< -o $@
 
+ata.o: $(SRC_DIR)/drivers/disk/ata.c
+	$(CC) $(CFLAGS) $< -o $@
+
 animations.o: $(SRC_DIR)/animations/animations.c
 	$(CC) $(CFLAGS) $< -o $@
 
@@ -91,11 +95,21 @@ irq1_stubs.o: utils/irq1_stubs.asm
 
 stellar.o: $(SRC_DIR)/stellar/stellar.c
 	$(CC) $(CFLAGS) $< -o $@
+
+pmm.o: $(SRC_DIR)/utils/pmm.c
+	$(CC) $(CFLAGS) $< -o $@
+
+malloc.o: $(SRC_DIR)/utils/malloc.c
+	$(CC) $(CFLAGS) $< -o $@
+
+fat32.o: $(SRC_DIR)/fs/fat32.c
+	$(CC) $(CFLAGS) $< -o $@
+
 clean:
 	rm -rf *.bin *.o isodir
 
 run: all
-	qemu-system-x86_64 -cdrom nova64.iso -vga std -d int,cpu_reset -D qemu.log
+	qemu-system-x86_64 -cdrom nova64.iso -vga std -d int,cpu_reset -D qemu.log -hda disk.img -boot d
 
 stellar:
 	gcc -DSTELLAR_HOST -fno-builtin -I./include src/tools/host_main.c -o stellar
