@@ -1,5 +1,9 @@
 #include <stellar/stellar.h>
-#include <stdlib.h> // Para atof
+#ifdef STELLAR_HOST
+#include <stdlib.h>
+#else
+#include "utils/string.h"
+#endif
 
 int stellar_compile(char* source, uint8_t* binary_out) {
     int src_ptr = 0;

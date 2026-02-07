@@ -67,10 +67,12 @@ void stellar_run(StellarVM* vm) {
             }
             case OP_PRINT: {
                 #ifdef STELLAR_HOST
-                printf("%g\n", vm->stack[vm->sp]); // %g remove zeros desnecessários
+                printf("%g\n", vm->stack[vm->sp]);
                 #else
-                // GAMBIARRA para o Kernel: imprime apenas a parte inteira por enquanto
-                print_double(vm->stack[vm->sp], 4, 0x0F, 0, cursor_y++);
+                print_double(vm->stack[vm->sp], 4, 0x0F, 0, cursor_y);
+                if (vm->code[vm->pc] != OP_HALT) {
+                    cursor_y++;
+                }
                 #endif
                 break;
             }

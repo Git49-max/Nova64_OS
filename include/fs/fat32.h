@@ -54,5 +54,6 @@ typedef struct {
 void fat32_init();
 uint32_t fat32_find_file_cluster(char* name);
 void read_sectors(uint32_t lba, uint8_t count, void* buffer);
+void format_to_fat(char* input, char* output);
 
 #endif

@@ -45,11 +45,14 @@ void keyboard_handler() {
     }
 
     char c = shift_pressed ? keyboard_map_shift[scancode] : keyboard_map[scancode];
+    
+    // LOGICA DO CURSOR: Apaga o cursor da posição antiga antes de qualquer ação
+    putc(' ', 0x00, cursor_x, cursor_y);
+
     if (c > 0) {
         last_char = c;
         key_pressed_now = 1;
     }
-
 
     if (c == '\n') {
         if (strcmp(key_buffer.data, "shell32.start") == 0 && config_active == 0) {
@@ -89,6 +92,8 @@ void keyboard_handler() {
                     string_clear(&key_buffer);
                     putc('>', 0x0F, cursor_x, cursor_y);
                     cursor_x++;
+                    // Desenha cursor na nova posição
+                    putc('|', 0x0F, cursor_x, cursor_y);
                     return;
                 }
             }
@@ -110,7 +115,6 @@ void keyboard_handler() {
     } 
     else if (c == '\b') {
         if (key_buffer.length > 0) {
-            putc(' ', 0x00, cursor_x, cursor_y);
             key_buffer.length--;
             key_buffer.data[key_buffer.length] = '\0';
             if (cursor_x > 0) {
@@ -121,7 +125,6 @@ void keyboard_handler() {
         }
     } 
     else if (c > 0) {
-        putc(' ', 0x02, cursor_x, cursor_y);
         string_append(&key_buffer, c);
         putc(c, 0x02, cursor_x, cursor_y);
         cursor_x++;
@@ -130,15 +133,18 @@ void keyboard_handler() {
             cursor_y++;
         }
     }
+
+    putc('|', 0x0F, cursor_x, cursor_y);
 }
+
 char get_input() {
-    last_char = 0; // Reseta
+    last_char = 0; 
     while (last_char == 0) {
-        // Espera até que a interrupção mude o valor de last_char
         __asm__ volatile("hlt"); 
     }
     return last_char;
 }
+
 void keyboard_init() {
     string_clear(&key_buffer);
     while (inb(0x64) & 0x01) inb(0x60);

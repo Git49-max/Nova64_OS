@@ -21,7 +21,7 @@ LDFLAGS = -m elf_x86_64 -T linker.ld -z max-page-size=0x1000
 KERNEL_OBJS = multiboot_header.o boot_64.o kernel.o videodriver.o kbdriver.o \
               rtcdriver.o pit.o io.o string.o shell.o config.o animations.o \
               idt.o idt_asm.o irq_stubs.o irq1_stubs.o stellar.o pmm.o malloc.o \
-			  fat32.o ata.o
+			  fat32.o ata.o stellar_compiler.o
 
 all: nova64.iso
 
@@ -94,6 +94,9 @@ irq1_stubs.o: utils/irq1_stubs.asm
 	$(AS) -f elf64 $< -o $@
 
 stellar.o: $(SRC_DIR)/stellar/stellar.c
+	$(CC) $(CFLAGS) $< -o $@
+
+stellar_compiler.o: $(SRC_DIR)/stellar/stellar_compiler.c
 	$(CC) $(CFLAGS) $< -o $@
 
 pmm.o: $(SRC_DIR)/utils/pmm.c

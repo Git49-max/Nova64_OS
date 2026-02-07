@@ -1,8 +1,11 @@
 #ifndef STELLAR_H
 #define STELLAR_H
 
-#include <stdint.h>
-
+#ifdef STELLAR_HOST
+#include <stdlib.h>
+#else
+#include "utils/string.h"
+#endif
 #define OP_HALT  0x00
 #define OP_PUSH  0x01
 #define OP_ADD   0x02

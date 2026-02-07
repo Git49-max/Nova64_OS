@@ -25,6 +25,29 @@ void fat32_init() {
     }
 }
 
+void format_to_fat(char* input, char* output) {
+    for(int i = 0; i < 11; i++) output[i] = ' ';
+
+    int i = 0, j = 0;
+    while(input[i] != '.' && input[i] != '\0' && j < 8) {
+        char c = input[i++];
+        if(c >= 'a' && c <= 'z') c -= 32;
+        output[j++] = c;
+    }
+
+    while(input[i] != '\0' && input[i] != '.') i++;
+    
+    if(input[i] == '.') {
+        i++;
+        j = 8;
+        while(input[i] != '\0' && j < 11) {
+            char c = input[i++];
+            if(c >= 'a' && c <= 'z') c -= 32;
+            output[j++] = c;
+        }
+    }
+}
+
 uint32_t fat32_find_file_cluster(char* name) {
     fat32_dir_t* root_dir = (fat32_dir_t*) kmalloc(512);
     

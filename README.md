@@ -59,13 +59,13 @@ The only way you can know for sure your PC is compatible, is by running the OS. 
 To mount the disk, we need to execute a series of commands. If you want an empty disk, you can run `dd if=/dev/zero of=disk.img bs=1M count=32` and then `mkfs.vfat -F 32 disk.img` and there is the FAT32 disk. But, if you want, you can code an .ste (Stellar language), compile it and create a disk that contains the [.exe](#exe) in it.
 
 1. Mount the disk normally `dd if=/dev/zero of=disk.img bs=1M count=32` and `mkfs.vfat -F 32 disk.img`
-2. NOTE: This version only runs your executable if it's named "calculo.exe". Stellar is in development stage, so there are only a few tokens. Create a file named "calculo.ste", and put something like: ```
+2. Create any file, with a .ste extension and put something like: ```
 a = 10
 b = a / 3
 print(a + b) ```.
-The repository has Stellar compiled, so just run `./stellar calculo.ste`. It will print the results of your code (or not, if you didn't put a `print()` call), but more importantly, it will generate "calculo.exe".
-3. Run the following commands: `mkdir mnt`, `sudo mount -o loop disk.img mnt`, `sudo cp calculo.exe`, `sudo umount mnt`.
-4. If everything is correct, you're good to go! Just mae sure you type stellar in the shell.
+and, if you want o test in your pc, run ./stellar file.ste, and it will print the results.
+3. Run the following command: `mcopy -i disk.img file.ste ::/`
+4. If everything is correct, you're good to go! Just make sure you type stellar in the shell.
 
 ## WSL
 
@@ -76,4 +76,4 @@ WSL is Windows Subsystem for Linux. You can install following this:
 2. Again, in the search bar, search for "Powershell". Click on "Open as an Administrator", and run the following command: `wsl --install`. It will install ubuntu in your machine. Complete the initial setup, and you can compile using the tutorial.
 
 ## Showcase
-https://github.com/user-attachments/assets/e2fc0610-644b-4619-9f82-7baa294bec09
+https://github.com/user-attachments/assets/94833358-6b9b-473f-9d64-308a61da40a2

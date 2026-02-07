@@ -4,7 +4,7 @@
 #include "RTC/rtcdriver.h"
 #include "kernel/kernel.h"
 #include "utils/io.h"
-#include "utils/pmm.h" // Para acessar free_pages 
+#include "utils/pmm.h"
 #include "utils/malloc.h"
 #include "fs/fat32.h"
 #include "stellar/stellar.h"
@@ -19,26 +19,23 @@ extern uint64_t stellar_stack[8192];
 extern uint32_t data_region_start;
 extern fat32_bpb_t* main_bpb;
 
-void run_stellar_from_disk() {
-    uint8_t* code_buf = (uint8_t*) kmalloc(512);
-    
-    // FAT32 armazena em maiúsculas: "CALCULO EXE" (7 letras + 1 espaço + 3 ext)
-    uint32_t cluster = fat32_find_file_cluster("CALCULO EXE");
-    
-    // SE O CLUSTER FOR 0, O ARQUIVO NÃO FOI ACHADO.
-    // Se tentar ler o cluster 0, o driver ATA vai travar o Nova64!
+void run_stellar_from_disk(char* fat_name) {
+    char* src_buffer = (char*) kmalloc(1024);
+    uint8_t* bin_buffer = (uint8_t*) kmalloc(1024);
+
+    uint32_t cluster = fat32_find_file_cluster(fat_name);
     if (cluster < 2) {
-        print("Erro: CALCULO.EXE nao encontrado no disco!", 0x0C, 0, cursor_y++);
-        return; 
+        print("Source file not found.", 0x0C, 0, cursor_y);
+        return;
     }
 
-    // Cálculo do setor físico (LBA)
     uint32_t lba = data_region_start + ((cluster - 2) * main_bpb->sectors_per_cluster);
-    
-    read_sectors(lba, 1, code_buf);
+    read_sectors(lba, 1, (uint8_t*)src_buffer);
+
+    stellar_compile(src_buffer, bin_buffer);
 
     StellarVM vm;
-    stellar_init(&vm, code_buf, (double*)stellar_stack);
+    stellar_init(&vm, bin_buffer, (double*)stellar_stack);
     stellar_run(&vm);
 }
 int h, m, s;
@@ -63,7 +60,6 @@ void display_neofetch() {
     print(" SHELL: ", 0x0B, 0, cursor_y);
     print("NovaBash (shell32)", 0x07, 8, cursor_y++);
     
-    // Memória Real baseada no PMM
     print(" MEMORY: ", 0x0B, 0, cursor_y);
     uint64_t free_kb = free_pages * 4;
     print_int(128, 0x07, 9, cursor_y);
@@ -109,7 +105,7 @@ void exeCommand(String key_buffer){
         clear_screen();
         bashinit();
     }
-    else if(strcmp(key_buffer.data, "free") == 0){ // NOVO COMANDO 
+    else if(strcmp(key_buffer.data, "free") == 0){ 
         print("Memory Free: ", 0x0A, 0, cursor_y);
         print_int((free_pages * 4) / 1024, 0x07, 13, cursor_y);
         print(" MB", 0x07, 16, cursor_y);
@@ -130,9 +126,26 @@ void exeCommand(String key_buffer){
         reboot();
     } else if(strcmp(key_buffer.data, "power --off") == 0){
         shutdown();
-    } else if(strcmp(key_buffer.data, "stellar") == 0){
-        run_stellar_from_disk();
+    } 
+else if(strncmp(key_buffer.data, "stellar ", 8) == 0) {
+    char* filename = &key_buffer.data[8]; 
+    
+    while(*filename == ' ') filename++;
+
+    if(*filename == '\0') {
+        print("Fatal Error: No file specified!", 0x04, 0, cursor_y);
+    } else {
+        char fat_name[11];
+        format_to_fat(filename, fat_name);
+        run_stellar_from_disk(fat_name);
     }
+}
+
+else if(strcmp(key_buffer.data, "stellar") == 0) {
+    print("Usage: stellar file.ste", 0x0E, 0, cursor_y);
+}
+
+
 
     else {
         print("COMMAND NOT FOUND!", 0x0C, 0, cursor_y);
