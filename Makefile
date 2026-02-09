@@ -21,7 +21,7 @@ LDFLAGS = -m elf_x86_64 -T linker.ld -z max-page-size=0x1000
 KERNEL_OBJS = multiboot_header.o boot_64.o kernel.o videodriver.o kbdriver.o \
               rtcdriver.o pit.o io.o string.o shell.o config.o animations.o \
               idt.o idt_asm.o irq_stubs.o irq1_stubs.o stellar.o pmm.o malloc.o \
-			  fat32.o ata.o stellar_compiler.o
+			  fat32.o ata.o stellar_compiler.o stellar_errors.o
 
 all: nova64.iso
 
@@ -99,6 +99,9 @@ stellar.o: $(SRC_DIR)/stellar/stellar.c
 stellar_compiler.o: $(SRC_DIR)/stellar/stellar_compiler.c
 	$(CC) $(CFLAGS) $< -o $@
 
+stellar_errors.o: $(SRC_DIR)/stellar/stellar_errors.c
+	$(CC) $(CFLAGS) $< -o $@
+
 pmm.o: $(SRC_DIR)/utils/pmm.c
 	$(CC) $(CFLAGS) $< -o $@
 
@@ -114,5 +117,6 @@ clean:
 run: all
 	qemu-system-x86_64 -cdrom nova64.iso -vga std -d int,cpu_reset -D qemu.log -hda disk.img -boot d
 
+.PHONY: stellar
 stellar:
 	gcc -DSTELLAR_HOST -fno-builtin -I./include src/tools/host_main.c -o stellar

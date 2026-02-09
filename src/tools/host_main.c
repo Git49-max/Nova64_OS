@@ -1,48 +1,60 @@
-#define _HOST_TEST_
 #include <stdio.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+#include <stellar/stellar.h>
+#include <stellar/stellar_errors.h>
 
-#include "../stellar/stellar_compiler.c"
 #include "../stellar/stellar.c"
+#include "../stellar/stellar_compiler.c"
+#include "../stellar/stellar_errors.c"
+
+#define RED   "\033[1;31m"
+#define RESET "\033[0m"
+#define BOLD  "\033[1m"
+
+char* file_read(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) { printf(RED "Fatal Error:" RESET BOLD "cannot open %s\n", path); exit(1); }
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char* s = malloc(sz + 1);
+    fread(s, sz, 1, f);
+    fclose(f);
+    s[sz] = 0;
+    return s;
+}
+
+void file_write(const char* path, uint8_t* data, int sz) {
+    FILE* f = fopen(path, "wb");
+    if (!f) exit(1);
+    fwrite(data, 1, sz, f);
+    fclose(f);
+}
 
 int main(int argc, char** argv) {
-    if (argc < 2) {
-        printf("Uso: ./stellar arquivo.ste\n");
-        return 1;
-    }
+    if (argc < 2) { printf("Usage: stellar <file.ste>\n"); return 1; }
 
-    FILE *f = fopen(argv[1], "r");
-    if (!f) return 1;
-    fseek(f, 0, SEEK_END);
-    long size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    char *src = malloc(size + 1);
-    fread(src, 1, size, f);
-    src[size] = '\0';
-    fclose(f);
+    char* filename = argv[1];
+    char* src = file_read(filename);
+    uint8_t bin[4096];
 
-    uint8_t bin[1024];
-    int bin_size = stellar_compile(src, bin);
+    int sz = compile(filename, src, bin);
 
-    // Salva o .exe com nome limpo
     char out_name[256];
-    strncpy(out_name, argv[1], 250);
+    strcpy(out_name, filename);
     char* dot = strrchr(out_name, '.');
-    if(dot) *dot = '\0';
-    strcat(out_name, ".exe");
+    if (dot) strcpy(dot, ".exe"); else strcat(out_name, ".exe");
 
-    FILE *f_out = fopen(out_name, "wb");
-    fwrite(bin, 1, bin_size, f_out);
-    fclose(f_out);
+    file_write(out_name, bin, sz);
 
-    // Roda a VM
-    double stack[1024];
     StellarVM vm;
-    stellar_init(&vm, bin, stack);
-    stellar_run(&vm);
+    double stack[8192];
+    vm_init(&vm, bin, stack);
+    vm_run(&vm);
 
+    remove(out_name); 
     free(src);
     return 0;
 }
