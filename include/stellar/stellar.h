@@ -27,11 +27,13 @@
 #define OP_CMP_GTE 0x0F //compare greater than or equal
 #define OP_CMP_LTE 0x10 //compare less than or equal
 #define OP_CMP_NEQ 0x11 //compare not equal
+#define OP_ELSE    0x12
+#define OP_ELSE_IF 0x13
 
 typedef struct {
     uint8_t* code;
     double* stack;
-    double variables[26];
+    double variables[256];
     int pc;
     int sp;
     int running;

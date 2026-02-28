@@ -10,7 +10,7 @@ extern void print_double(double, int, int, int, int);
 void vm_init(StellarVM* vm, uint8_t* code, double* stack) {
     vm->code = code; vm->stack = stack;
     vm->pc = 0; vm->sp = -1; vm->running = 0;
-    for(int i = 0; i < 26; i++) vm->variables[i] = 0.0;
+    for(int i = 0; i < 256; i++) vm->variables[i] = 0.0;
 }
 
 void vm_run(StellarVM* vm) {
