@@ -38,8 +38,8 @@ int main(int argc, char** argv) {
 
     char* filename = argv[1];
     char* src = file_read(filename);
-    uint8_t bin[4096];
-    memset(bin, 0, 4096);
+    uint8_t bin[65536]; // 64KB de espaço para o binário
+    memset(bin, 0, 65536);
     int sz = compile(filename, src, bin);
 
     char out_name[256];

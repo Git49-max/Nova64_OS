@@ -16,10 +16,13 @@
     extern int cursor_y;
 #endif
 
+typedef enum { TY_DOUBLE, TY_INT } VarType;
+
 // --- SYMBOL TABLE ---
 typedef struct {
     char name[32];
     int id;
+    VarType type; 
 } Symbol;
 
 static Symbol symbol_table[256];
@@ -32,10 +35,11 @@ static int find_variable(char* name) {
     return -1;
 }
 
-static int add_variable(char* name) {
+static int add_variable(char* name, VarType type) {
     if (symbol_count >= 256) return -1;
     strncpy(symbol_table[symbol_count].name, name, 31);
     symbol_table[symbol_count].id = symbol_count;
+    symbol_table[symbol_count].type = type; 
     return symbol_count++;
 }
 
@@ -83,11 +87,15 @@ int compile(char* filename, char* source, uint8_t* out) {
             if (p_add_sub) { out[b_ptr++] = p_add_sub; p_add_sub = 0; }
             if (p_cmp)     { out[b_ptr++] = p_cmp; p_cmp = 0; }
             
-            if (var_store != -1) {
-                out[b_ptr++] = OP_STORE; 
-                out[b_ptr++] = (uint8_t)var_store;
+            if (var_store == -2) {
+                // Se era um a[i] = valor, agora o valor já está na stack
+                out[b_ptr++] = OP_ARRAY_SET;
                 var_store = -1;
-            }
+            } else if (var_store != -1) {
+                    out[b_ptr++] = (symbol_table[var_store].type == TY_INT) ? OP_STORE_I : OP_STORE;
+                    out[b_ptr++] = (uint8_t)var_store;
+                    var_store = -1;
+                }
             force_semicolon_check = 0;
             s_ptr++;
             continue;
@@ -102,6 +110,35 @@ int compile(char* filename, char* source, uint8_t* out) {
             continue;
         }
 
+        if (c == '"') {
+            s_ptr++;
+            int start_str = s_ptr;
+            while (source[s_ptr] != '"' && source[s_ptr] != '\0') s_ptr++;
+            int str_len = s_ptr - start_str;
+
+            // 1. Emite um JMP para pular o texto (3 bytes: Opcode + Addr16)
+            out[b_ptr++] = OP_JMP;
+            int jmp_patch = b_ptr; 
+            out[b_ptr++] = 0; out[b_ptr++] = 0;
+
+            // 2. Aqui começa a string real
+            uint16_t str_addr = (uint16_t)b_ptr;
+            for (int i = 0; i < str_len; i++) out[b_ptr++] = source[start_str + i];
+            out[b_ptr++] = '\0';
+
+            // 3. Patch do JMP: Agora o JMP aponta para DEPOIS do \0
+            patch16(out, jmp_patch, (uint16_t)b_ptr);
+
+            // 4. Agora sim, empilha o endereço que a gente guardou
+            out[b_ptr++] = OP_PUSH; // Usamos o PUSH normal de 8 bytes (double)
+            double addr_val = (double)str_addr;
+            for (int i = 0; i < 8; i++) out[b_ptr++] = ((uint8_t*)&addr_val)[i];
+
+            if (expect_print) {
+                expect_print = 2; // Sinaliza PRINT_STR
+            }
+            s_ptr++; continue;
+        }
         // --- IF / ELSE IF / ELSE ---
         int len;
         if ((len = match(source, s_ptr, "if"))) {
@@ -168,28 +205,104 @@ int compile(char* filename, char* source, uint8_t* out) {
             s_ptr += len; continue;
         }
 
-        if ((len = match(source, s_ptr, "let"))) {
-            if (var_store != -1) error_exit(filename, source, s_ptr, "Missing ';' before 'let'", len, NULL);
-            s_ptr += len; while (isspace(source[s_ptr])) s_ptr++;
+       // --- DECLARAÇÃO: let (double) ou int (inteiro) ---
+        int is_int = -1;
+        if ((len = match(source, s_ptr, "let"))) { is_int = 0; }
+        else if ((len = match(source, s_ptr, "int"))) { is_int = 1; }
+
+        if (is_int != -1) {
+            if (var_store != -1) error_exit(filename, source, s_ptr, "Missing ';' before declaration", len, NULL);
+            s_ptr += len; 
+            while (isspace(source[s_ptr])) s_ptr++;
             
             char var_name[32] = {0}; int p = 0;
             while (isalnum(source[s_ptr]) || source[s_ptr] == '_') {
                 if(p < 31) var_name[p++] = source[s_ptr++]; else s_ptr++;
             }
             
-            if (find_variable(var_name) == -1) {
-                if (add_variable(var_name) == -1) 
+            int current_var_idx = find_variable(var_name);
+            if (current_var_idx == -1) {
+                // Adiciona a variável passando o tipo: TY_INT ou TY_DOUBLE
+                current_var_idx = add_variable(var_name, is_int ? TY_INT : TY_DOUBLE);
+                if (current_var_idx == -1) 
                     error_exit(filename, source, s_ptr, "Too many variables (limit 256)", 1, NULL);
             }
             
             while (isspace(source[s_ptr])) s_ptr++;
-            if (source[s_ptr] == '=') { var_store = find_variable(var_name); s_ptr++; }
+            
+            if (source[s_ptr] == '=') {
+                s_ptr++; // Pula o '='
+                while (isspace(source[s_ptr])) s_ptr++;
+
+                if (source[s_ptr] == '[') {
+                    s_ptr++; // Pula o '['
+                    while (isspace(source[s_ptr])) s_ptr++;
+
+                    // Lendo o tamanho do array
+                    if (isdigit(source[s_ptr])) {
+                        char num_buf[16] = {0}; int np = 0;
+                        while(isdigit(source[s_ptr]) || source[s_ptr] == '.') num_buf[np++] = source[s_ptr++];
+                        double size = atof(num_buf);
+                        out[b_ptr++] = OP_PUSH;
+                        for (int i = 0; i < 8; i++) out[b_ptr++] = ((uint8_t*)&size)[i];
+                    } else {
+                        error_exit(filename, source, s_ptr, "Array size must be a number for now", 1, NULL);
+                    }
+
+                    while (isspace(source[s_ptr])) s_ptr++;
+                    if (source[s_ptr] != ']') error_exit(filename, source, s_ptr, "Expected ']'", 1, NULL);
+                    s_ptr++;
+
+                    out[b_ptr++] = OP_ARRAY_MAKE;
+                    
+                    // Arrays sempre usam o STORE de double por enquanto para guardar o ponteiro
+                    out[b_ptr++] = OP_STORE;
+                    out[b_ptr++] = (uint8_t)current_var_idx;
+                    
+                    force_semicolon_check = 1;
+                } else {
+                    // Atribuição normal (o valor será armazenado no ponto e vírgula)
+                    var_store = current_var_idx;
+                }
+            }
             continue;
         }
 
         if ((len = match(source, s_ptr, "print"))) { 
             if (var_store != -1) error_exit(filename, source, s_ptr, "Missing ';' before 'print'", len, NULL);
             expect_print = 1; s_ptr += len; continue; 
+        }
+        // --- SUPORTE A INPUT ---
+        if ((len = match(source, s_ptr, "input"))) {
+            s_ptr += len;
+            while (isspace(source[s_ptr])) s_ptr++;
+            
+            if (source[s_ptr] != '(') error_exit(filename, source, s_ptr, "Expected '(' after input", 1, NULL);
+            s_ptr++;
+            while (isspace(source[s_ptr])) s_ptr++;
+
+            // Captura o nome da variável alvo
+            char var_name[32] = {0}; int p = 0;
+            while (isalnum(source[s_ptr]) || source[s_ptr] == '_') {
+                if(p < 31) var_name[p++] = source[s_ptr++]; else s_ptr++;
+            }
+
+            int idx = find_variable(var_name);
+            if (idx == -1) error_exit(filename, source, s_ptr, "Variable not declared for input", p, NULL);
+
+            
+
+            while (isspace(source[s_ptr])) s_ptr++;
+            if (source[s_ptr] != ')') error_exit(filename, source, s_ptr, "Expected ')' after variable name", 1, NULL);
+            s_ptr++;
+
+            // Geração do Bytecode
+            out[b_ptr++] = OP_INPUT;  // Coloca o valor lido na stack
+            out[b_ptr++] = OP_STORE;  // Tira da stack e salva na variável
+            out[b_ptr++] = (uint8_t)idx;
+
+            force_semicolon_check = 1;
+            continue;
         }
 
         if (c == '(' ) { paren_depth++; s_ptr++; continue; }
@@ -208,7 +321,15 @@ int compile(char* filename, char* source, uint8_t* out) {
                 else while_exit[while_top] = patch_pos;
                 expecting_cond_stack[scope_top] = 0;
             }
-            if (expect_print) { out[b_ptr++] = OP_PRINT; expect_print = 0; force_semicolon_check = 1; }
+            if (expect_print) {
+                if (expect_print == 2) {
+                    out[b_ptr++] = OP_PRINT_STR;
+                } else {
+                    out[b_ptr++] = OP_PRINT;
+                }
+                expect_print = 0; 
+                force_semicolon_check = 1; 
+            }
             s_ptr++; continue;
         }
 
@@ -259,7 +380,7 @@ int compile(char* filename, char* source, uint8_t* out) {
             // --- PRESERVAÇÃO: Unknown Function Call + Sugestão ---
             if (source[chk] == '(') {
                 char* suggestion = NULL;
-                const char* valid_functions[] = { "print", NULL };
+                const char* valid_functions[] = { "print", "input", NULL };
                 for (int i = 0; valid_functions[i] != NULL; i++) {
                     if (is_similar(word, valid_functions[i])) {
                         suggestion = (char*)valid_functions[i];
@@ -271,24 +392,259 @@ int compile(char* filename, char* source, uint8_t* out) {
 
             int idx = find_variable(word);
             if (idx == -1) error_exit(filename, source, start, "Variable not declared", w_len, NULL);
+
+            if (source[chk] == '+' && source[chk+1] == '+') {
+                out[b_ptr++] = (symbol_table[idx].type == TY_INT) ? OP_INC_I : OP_INC;
+                out[b_ptr++] = (uint8_t)idx;
+                s_ptr = chk + 2; // Pula os dois '+'
+                // Precisamos garantir que o usuário coloque ';' depois, ou tratar como instrução finalizada
+                force_semicolon_check = 1; 
+                continue;
+            }
+
+            if (source[chk] == '-' && source[chk+1] == '-') {
+                out[b_ptr++] = (symbol_table[idx].type == TY_INT) ? OP_DEC_I : OP_DEC;
+                out[b_ptr++] = (uint8_t)idx;
+                s_ptr = chk + 2; 
+                force_semicolon_check = 1; 
+                continue;
+            }
             
-            if (source[chk] == '=' && source[chk+1] != '=') {
+            // --- TRATAMENTO DE ARRAYS ---
+            if (source[chk] == '[') {
+            s_ptr = chk + 1;
+            while (isspace(source[s_ptr])) s_ptr++;
+
+            // 1. Carrega o endereço base (ponteiro) do array
+            // Arrays são sempre armazenados como ponteiros (double/uintptr_t)
+            out[b_ptr++] = OP_LOAD;
+            out[b_ptr++] = (uint8_t)idx;
+
+            // 2. Compila o índice (Número ou outra Variável)
+            if (isdigit(source[s_ptr])) {
+                char num_buf[16] = {0}; int np = 0;
+                while(isdigit(source[s_ptr]) || source[s_ptr] == '.') num_buf[np++] = source[s_ptr++];
+                double idx_val = atof(num_buf);
+                out[b_ptr++] = OP_PUSH;
+                for (int i = 0; i < 8; i++) out[b_ptr++] = ((uint8_t*)&idx_val)[i];
+            } else if (isalpha(source[s_ptr])) {
+                char idx_var_name[32] = {0}; int p = 0;
+                while (isalnum(source[s_ptr]) || source[s_ptr] == '_') idx_var_name[p++] = source[s_ptr++];
+                int idx_var = find_variable(idx_var_name);
+                if (idx_var == -1) error_exit(filename, source, s_ptr, "Index variable not declared", p, NULL);
+                
+                // --- CORREÇÃO AQUI ---
+                // Se o índice for uma variável 'int', usamos LOAD_I para converter para double na stack
+                out[b_ptr++] = (symbol_table[idx_var].type == TY_INT) ? OP_LOAD_I : OP_LOAD;
+                out[b_ptr++] = (uint8_t)idx_var;
+            }
+
+            while (isspace(source[s_ptr])) s_ptr++;
+            if (source[s_ptr] != ']') error_exit(filename, source, s_ptr, "Expected ']'", 1, NULL);
+            s_ptr++;
+            
+            while (isspace(source[s_ptr])) s_ptr++;
+
+            // 3. Decidir se é Leitura (GET) ou Escrita (SET)
+            if (source[s_ptr] == '=' && source[s_ptr+1] != '=') {
+                // Atribuição: a[i] = valor;
+                s_ptr++; // pula '='
+                var_store = -2; // Sinalizador para o ';' emitir OP_ARRAY_SET
+                // O valor a ser guardado será compilado nas próximas iterações do loop principal
+            } else {
+                // Leitura: x = a[i]; ou print a[i];
+                out[b_ptr++] = OP_ARRAY_GET;
+                
+                // Se houver operação pendente (ex: a[i] * 2), aplica agora
+                if (p_mul_div) { 
+                    out[b_ptr++] = p_mul_div; 
+                    p_mul_div = 0; 
+                }
+                if (p_add_sub) {
+                    out[b_ptr++] = p_add_sub;
+                    p_add_sub = 0;
+                }
+            }
+            continue;
+        } 
+            // --- ATRIBUIÇÕES COMPOSTAS E SIMPLES ---
+            else if (source[chk] == '=' && source[chk+1] != '=') {
                 if (var_store != -1) error_exit(filename, source, start, "Missing ';' before assignment", w_len, NULL);
                 var_store = idx; s_ptr = chk + 1;
             } 
             else if (source[chk] == '+' && source[chk+1] == '=') {
-                out[b_ptr++] = OP_LOAD; out[b_ptr++] = (uint8_t)idx;
-                p_add_sub = OP_ADD; var_store = idx; s_ptr = chk + 2;
-            } else if (source[chk] == '-' && source[chk+1] == '=') {
-                out[b_ptr++] = OP_LOAD; out[b_ptr++] = (uint8_t)idx;
-                p_add_sub = OP_SUB; var_store = idx; s_ptr = chk + 2;
-            } else if (source[chk] == '*' && source[chk+1] == '=') {
-                out[b_ptr++] = OP_LOAD; out[b_ptr++] = (uint8_t)idx;
-                p_mul_div = OP_MUL; var_store = idx; s_ptr = chk + 2;
+                s_ptr = chk + 2;
+                while (isspace(source[s_ptr])) s_ptr++;
+
+                // Se o que vem depois for um número (ex: j += 2)
+                if (isdigit(source[s_ptr])) {
+                    char val_str[32];
+                    int v_ptr = 0;
+                    while (isdigit(source[s_ptr]) || source[s_ptr] == '.') {
+                        val_str[v_ptr++] = source[s_ptr++];
+                    }
+                    val_str[v_ptr] = '\0';
+                    double val = atof(val_str);
+
+                    if (symbol_table[idx].type == TY_INT) {
+                        out[b_ptr++] = OP_ADD_CONST_I;
+                        out[b_ptr++] = (uint8_t)idx;
+                        long ival = (long)val; // Converte para long para a VM ler como .i
+                        for(int i=0; i<8; i++) out[b_ptr++] = ((uint8_t*)&ival)[i];
+                    } else {
+                        out[b_ptr++] = OP_ADD_CONST;
+                        out[b_ptr++] = (uint8_t)idx;
+                        for(int i=0; i<8; i++) out[b_ptr++] = ((uint8_t*)&val)[i];
+                    }
+                    
+                    force_semicolon_check = 1;
+                    continue;
+                }
+
+                // Verifica se é uma variável simples: j += i;
+                if (isalpha(source[s_ptr])) {
+                    int start_src = s_ptr;
+                    while (isalnum(source[s_ptr]) || source[s_ptr] == '_') s_ptr++;
+                    int src_len = s_ptr - start_src;
+                    
+                    char src_name[32] = {0};
+                    strncpy(src_name, &source[start_src], src_len);
+                    int src_idx = find_variable(src_name);
+
+                    if (src_idx != -1) {
+                        if (symbol_table[idx].type == TY_INT && symbol_table[src_idx].type == TY_INT) {
+                            out[b_ptr++] = OP_ADD_VAR_I;
+                        } else {
+                            out[b_ptr++] = OP_ADD_VAR;
+                        }
+                        out[b_ptr++] = (uint8_t)idx;     // Destino (j)
+                        out[b_ptr++] = (uint8_t)src_idx; // Origem (i)
+                        force_semicolon_check = 1;
+                        continue;
+                    }
+                    s_ptr = start_src; 
+                }
+                
+                // Modo padrão (Fallback para stack se não for otimizável)
+                out[b_ptr++] = (symbol_table[idx].type == TY_INT) ? OP_LOAD_I : OP_LOAD;
+                out[b_ptr++] = (uint8_t)idx;
+                p_add_sub = OP_ADD; var_store = idx;
             } 
+            else if (source[chk] == '-' && source[chk+1] == '=') {
+                s_ptr = chk + 2;
+                while (isspace(source[s_ptr])) s_ptr++;
+
+                if (isdigit(source[s_ptr])) {
+                    char val_str[32];
+                    int v_ptr = 0;
+                    while (isdigit(source[s_ptr]) || source[s_ptr] == '.') val_str[v_ptr++] = source[s_ptr++];
+                    val_str[v_ptr] = '\0';
+                    double val = atof(val_str);
+
+                    if (symbol_table[idx].type == TY_INT) {
+                        out[b_ptr++] = OP_SUB_CONST_I;
+                        out[b_ptr++] = (uint8_t)idx;
+                        long ival = (long)val;
+                        for(int i=0; i<8; i++) out[b_ptr++] = ((uint8_t*)&ival)[i];
+                    } else {
+                        out[b_ptr++] = OP_SUB_CONST;
+                        out[b_ptr++] = (uint8_t)idx;
+                        for(int i=0; i<8; i++) out[b_ptr++] = ((uint8_t*)&val)[i];
+                    }
+                    force_semicolon_check = 1;
+                    continue;
+                }
+
+                if (isalpha(source[s_ptr])) {
+                    int start_src = s_ptr;
+                    while (isalnum(source[s_ptr]) || source[s_ptr] == '_') s_ptr++;
+                    int src_len = s_ptr - start_src;
+                    char src_name[32] = {0};
+                    strncpy(src_name, &source[start_src], src_len);
+                    int src_idx = find_variable(src_name);
+
+                    if (src_idx != -1) {
+                        if (symbol_table[idx].type == TY_INT && symbol_table[src_idx].type == TY_INT) {
+                            out[b_ptr++] = OP_SUB_VAR_I;
+                        } else {
+                            out[b_ptr++] = OP_SUB_VAR;
+                        }
+                        out[b_ptr++] = (uint8_t)idx;
+                        out[b_ptr++] = (uint8_t)src_idx;
+                        force_semicolon_check = 1;
+                        continue;
+                    }
+                    s_ptr = start_src; 
+                }
+                
+                out[b_ptr++] = (symbol_table[idx].type == TY_INT) ? OP_LOAD_I : OP_LOAD;
+                out[b_ptr++] = (uint8_t)idx;
+                p_add_sub = OP_SUB; var_store = idx;
+            } 
+            else if (source[chk] == '*' && source[chk+1] == '=') {
+                s_ptr = chk + 2;
+                while (isspace(source[s_ptr])) s_ptr++;
+
+                if (isdigit(source[s_ptr])) {
+                    char val_str[32];
+                    int v_ptr = 0;
+                    while (isdigit(source[s_ptr]) || source[s_ptr] == '.') val_str[v_ptr++] = source[s_ptr++];
+                    val_str[v_ptr] = '\0';
+                    double val = atof(val_str);
+
+                    if (symbol_table[idx].type == TY_INT) {
+                        out[b_ptr++] = OP_MUL_CONST_I;
+                        out[b_ptr++] = (uint8_t)idx;
+                        long ival = (long)val;
+                        for(int i=0; i<8; i++) out[b_ptr++] = ((uint8_t*)&ival)[i];
+                    } else {
+                        out[b_ptr++] = OP_MUL_CONST;
+                        out[b_ptr++] = (uint8_t)idx;
+                        for(int i=0; i<8; i++) out[b_ptr++] = ((uint8_t*)&val)[i];
+                    }
+                    force_semicolon_check = 1;
+                    continue;
+                }
+
+                if (isalpha(source[s_ptr])) {
+                    int start_src = s_ptr;
+                    while (isalnum(source[s_ptr]) || source[s_ptr] == '_') s_ptr++;
+                    int src_len = s_ptr - start_src;
+                    char src_name[32] = {0};
+                    strncpy(src_name, &source[start_src], src_len);
+                    int src_idx = find_variable(src_name);
+
+                    if (src_idx != -1) {
+                        if (symbol_table[idx].type == TY_INT && symbol_table[src_idx].type == TY_INT) {
+                            out[b_ptr++] = OP_MUL_VAR_I;
+                        } else {
+                            out[b_ptr++] = OP_MUL_VAR;
+                        }
+                        out[b_ptr++] = (uint8_t)idx;
+                        out[b_ptr++] = (uint8_t)src_idx;
+                        force_semicolon_check = 1;
+                        continue;
+                    }
+                    s_ptr = start_src; 
+                }
+                
+                out[b_ptr++] = (symbol_table[idx].type == TY_INT) ? OP_LOAD_I : OP_LOAD;
+                out[b_ptr++] = (uint8_t)idx;
+                p_mul_div = OP_MUL; var_store = idx;
+            }
+            // --- VARIÁVEL SIMPLES (LEITURA) ---
             else {
-                out[b_ptr++] = OP_LOAD; out[b_ptr++] = (uint8_t)idx;
-                if (p_mul_div) { out[b_ptr++] = p_mul_div; p_mul_div = 0; }
+                // 1. Carrega a variável com o tipo correto
+                out[b_ptr++] = (symbol_table[idx].type == TY_INT) ? OP_LOAD_I : OP_LOAD;
+                out[b_ptr++] = (uint8_t)idx;
+                
+                // 2. Se havia uma multiplicação/divisão pendente ANTES desta variável, aplica AGORA
+                if (p_mul_div) { 
+                    out[b_ptr++] = p_mul_div; 
+                    p_mul_div = 0; 
+                }
+                
+                s_ptr = chk;
             }
             continue;
         }

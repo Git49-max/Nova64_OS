@@ -119,4 +119,8 @@ run: all
 
 .PHONY: stellar
 stellar:
-	gcc -DSTELLAR_HOST -fno-builtin -I./include src/tools/host_main.c -o stellar
+	gcc -DSTELLAR_HOST -fno-builtin -O3 -fno-crossjumping -I./include src/tools/host_main.c -o stellar
+
+.PHONY: stellarwin
+stellarwin:
+	x86_64-w64-mingw32-gcc -DSTELLAR_HOST -fno-builtin -O3 -fno-crossjumping -I./include src/tools/host_main.c -o stellar.exe

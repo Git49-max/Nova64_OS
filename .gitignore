@@ -8,3 +8,11 @@ nova64.img
 *.iso
 *.exe
 *.ste
+*.py
+www
+*.html
+*.js
+*.css
+releases
+_redirects
+*.lua
