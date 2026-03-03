@@ -124,3 +124,7 @@ stellar:
 .PHONY: stellarwin
 stellarwin:
 	x86_64-w64-mingw32-gcc -DSTELLAR_HOST -fno-builtin -O3 -fno-crossjumping -I./include src/tools/host_main.c -o stellar.exe
+
+.PHONY: stellaropen
+stellaropen: 
+	gcc -DSTELLAR_HOST -fno-builtin -O3 -fno-crossjumping -I./include src/tools/host_open.c -o stellar

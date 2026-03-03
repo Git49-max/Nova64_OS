@@ -17,3 +17,4 @@ releases
 _redirects
 *.lua
 *.txt
+host_main.c
