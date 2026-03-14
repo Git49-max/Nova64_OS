@@ -1,0 +1,48 @@
+// 07_expressoes.npp
+// Testa precedência de operadores e expressões complexas
+
+void main() {
+    // Precedência: * antes de +
+    int a = 2 + 3 * 4;
+    print(a);   // 14
+
+    // Parênteses
+    int b = (2 + 3) * 4;
+    print(b);   // 20
+
+    // Módulo
+    print(10 % 3);  // 1
+    print(17 % 5);  // 2
+    print(8 % 4);   // 0
+
+    // Operadores compostos
+    int x = 10;
+    x += 5;
+    print(x);   // 15
+    x -= 3;
+    print(x);   // 12
+    x *= 2;
+    print(x);   // 24
+    x /= 4;
+    print(x);   // 6
+
+    // Incremento/decremento
+    int y = 5;
+    y++;
+    print(y);   // 6
+    y--;
+    y--;
+    print(y);   // 4
+
+    // Comparações
+    print(5 == 5);   // 1
+    print(5 != 4);   // 1
+    print(3 < 4);    // 1
+    print(4 > 3);    // 1
+    print(3 <= 3);   // 1
+    print(4 >= 5);   // 0
+
+    // Expressão complexa
+    int r = (3 + 2) * 4 - 10 / 2 + 1;
+    print(r);   // 16  ((5*4) - 5 + 1)
+}

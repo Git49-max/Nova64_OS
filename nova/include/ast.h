@@ -45,8 +45,9 @@ struct VarName : ASTNode{
 struct BinaryOpNode : ASTNode {
     std::string op;
     NodePtr left, right;
-    BinaryOpNode(const std::string& op, NodePtr l, NodePtr r)
-        : op(op), left(std::move(l)), right(std::move(r)) {}
+    int line, col;
+    BinaryOpNode(const std::string& op, NodePtr l, NodePtr r, int ln = 0, int c = 0)
+        : op(op), left(std::move(l)), right(std::move(r)), line(ln), col(c) {}
 };
 
 // Operação unária: !expr
@@ -192,13 +193,23 @@ struct StructField {
     std::string name;
 };
 
-// Definicao: struct Point { int x; int y; }
+// Metodo dentro de struct
+struct StructMethod {
+    DataType returnType;
+    std::string name;
+    std::vector<ParamNode> params;
+    std::vector<NodePtr> body;
+};
+
+// Definicao: struct Point { int x; int y; void move(int dx) { ... } }
 struct StructDefNode : ASTNode {
     std::string name;
     std::vector<StructField> fields;
+    std::vector<StructMethod> methods;
     int line, col;
-    StructDefNode(const std::string& n, std::vector<StructField> f, int l, int c)
-        : name(n), fields(std::move(f)), line(l), col(c) {}
+    StructDefNode(const std::string& n, std::vector<StructField> f,
+                  std::vector<StructMethod> m, int l, int c)
+        : name(n), fields(std::move(f)), methods(std::move(m)), line(l), col(c) {}
 };
 
 // Declaracao de variavel do tipo struct: Point p;
@@ -227,6 +238,17 @@ struct FieldAssignNode : ASTNode {
     int line, col;
     FieldAssignNode(const std::string& v, const std::string& f, NodePtr e, int l, int c)
         : varName(v), fieldName(f), value(std::move(e)), line(l), col(c) {}
+};
+
+// Chamada de metodo: p.move(10)
+struct MethodCallNode : ASTNode {
+    std::string varName;
+    std::string methodName;
+    std::vector<NodePtr> args;
+    int line, col;
+    MethodCallNode(const std::string& v, const std::string& m,
+                   std::vector<NodePtr> a, int l, int c)
+        : varName(v), methodName(m), args(std::move(a)), line(l), col(c) {}
 };
 
 // ─── Programa inteiro ─────────────────────────────────

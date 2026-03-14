@@ -22,6 +22,7 @@ enum TokenType{
     TOKEN_MINUS,
     TOKEN_STAR,
     TOKEN_SLASH,
+    TOKEN_PERCENT,
     TOKEN_ASSIGN,
     TOKEN_EQ,
     TOKEN_NEQ,

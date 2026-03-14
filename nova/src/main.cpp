@@ -24,12 +24,6 @@ ProgramNode parseProgram(const std::string& source, const std::string& filename)
 #define ANSI_GRAY    "\033[0;90m"
 #define ANSI_WHITE   "\033[1;37m"
 
-static void printOk(const std::string& msg) {
-    std::cout << ANSI_BLUE << "  ✓ " << ANSI_RESET << msg << "\n";
-}
-static void printStep(const std::string& msg) {
-    std::cout << ANSI_CYAN << "  » " << ANSI_RESET << msg << "\n";
-}
 static void printError(const std::string& msg) {
     std::cerr << ANSI_RED << "  ✗ error: " << ANSI_RESET << ANSI_BOLD << msg << ANSI_RESET << "\n";
 }
@@ -101,30 +95,17 @@ static int compileFile(const std::string& sourceFile, const std::string& outputF
 
     auto total_start = std::chrono::high_resolution_clock::now();
 
-    printStep("Parsing...");
     auto t0 = std::chrono::high_resolution_clock::now();
     ProgramNode program = parseProgram(buf.str(), sourceFile);
-    auto t1 = std::chrono::high_resolution_clock::now();
-    double parseMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
-    printOk("Parse complete " + std::string(ANSI_GRAY) + "(" + std::to_string((int)parseMs) + "ms)" + ANSI_RESET);
 
-    printStep("Generating code...");
     t0 = std::chrono::high_resolution_clock::now();
     codegenProgram(program, objFile, sourceFile, optLevel);
-    t1 = std::chrono::high_resolution_clock::now();
-    double codegenMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
-    printOk("Codegen complete " + std::string(ANSI_GRAY) + "(" + std::to_string((int)codegenMs) + "ms)" + ANSI_RESET);
 
-    printStep("Linking...");
-    t0 = std::chrono::high_resolution_clock::now();
     std::string linkCmd = buildLinkCmd(objFile, outputFile);
     int ret = system(linkCmd.c_str());
     std::remove(objFile.c_str());
-    t1 = std::chrono::high_resolution_clock::now();
-    double linkMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
     if (ret != 0) { printError("linking failed"); return 1; }
-    printOk("Link complete " + std::string(ANSI_GRAY) + "(" + std::to_string((int)linkMs) + "ms)" + ANSI_RESET);
 
     auto total_end = std::chrono::high_resolution_clock::now();
     double totalMs = std::chrono::duration<double, std::milli>(total_end - total_start).count();
@@ -142,9 +123,7 @@ static const std::vector<std::string> KEYWORDS = {
     "if","else","then","while","for","return","print","struct",
     "int","float","string","void"
 };
-static bool isKeyword(const std::string& w) {
-    return std::find(KEYWORDS.begin(), KEYWORDS.end(), w) != KEYWORDS.end();
-}
+
 
 // ── Paleta de cores do editor ─────────────────────────────────────────────────
 // Fundo escuro azul-acinzentado, sem verde em lugar nenhum
@@ -459,7 +438,7 @@ static void runEditor(const std::string& editFile,
         // ── Footer ────────────────────────────────────────────────────
         werase(footerWin);
         wattron(footerWin, A_REVERSE | A_BOLD);
-        char pos[32];
+        char pos[64];
         snprintf(pos, sizeof(pos), " Ln %d, Col %d ", curRow + 1, curCol + 1);
         std::string shortcuts = "  ^S Save & Compile   ^X Save, Compile & Exit"
                                 "   ^R Rename   ^Q Quit  ";

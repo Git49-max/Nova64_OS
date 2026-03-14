@@ -111,6 +111,7 @@ Token nextToken() {
         case '-': return {TOKEN_MINUS,  "-", tokLine, tokCol};
         case '*': return {TOKEN_STAR,   "*", tokLine, tokCol};
         case '/': return {TOKEN_SLASH,  "/", tokLine, tokCol};
+        case '%': return {TOKEN_PERCENT, "%", tokLine, tokCol};
         case '(': return {TOKEN_LPAREN, "(", tokLine, tokCol};
         case ')': return {TOKEN_RPAREN, ")", tokLine, tokCol};
         case '{': return {TOKEN_LBRACE, "{", tokLine, tokCol};

@@ -2,9 +2,14 @@
 #include "../include/lexer.h"
 #include "../include/error.h"
 #include <iostream>
+#include <map>
 
 static Token current;
-static std::string sourceFile; // nome do arquivo para mensagens de erro
+static std::string sourceFile;
+
+// Mapa de tamanho de arrays declarados: nome -> tamanho
+// Usado para bound checking em tempo de compilação
+static std::map<std::string, int> arraySizes;
 
 static std::string tokenTypeName(TokenType t) {
     switch (t) {
@@ -115,14 +120,42 @@ static NodePtr parsePrimary() {
         }
         if (current.type == TOKEN_LBRACKET) {
             current = nextToken();
+            int idxLine = current.line, idxCol = current.col;
             auto index = parseExpr();
             eat(TOKEN_RBRACKET);
+            // Bound check em tempo de compilação (só para literais inteiros)
+            if (auto* lit = dynamic_cast<IntLitNode*>(index.get())) {
+                auto it = arraySizes.find(name);
+                if (it != arraySizes.end()) {
+                    int idx = lit->value;
+                    if (idx < 0 || idx >= it->second) {
+                        std::string ln = getSourceLine(idxLine);
+                        reportError(sourceFile, idxLine, idxCol,
+                            "index " + std::to_string(idx) + " is out of bounds for array '" +
+                            name + "' of size " + std::to_string(it->second) +
+                            " (valid range: 0.." + std::to_string(it->second - 1) + ")",
+                            ln, (int)std::to_string(idx).size());
+                    }
+                }
+            }
             return std::make_unique<ArrayAccessNode>(name, std::move(index), tokLine, tokCol);
         }
         if (current.type == TOKEN_DOT) {
             current = nextToken();
-            std::string field = eat(TOKEN_IDENT).value;
-            return std::make_unique<FieldAccessNode>(name, field, tokLine, tokCol);
+            std::string member = eat(TOKEN_IDENT).value;
+            // p.metodo(args) — method call
+            if (current.type == TOKEN_LPAREN) {
+                current = nextToken();
+                std::vector<NodePtr> args;
+                while (current.type != TOKEN_RPAREN) {
+                    args.push_back(parseExpr());
+                    if (current.type == TOKEN_COMMA) current = nextToken();
+                }
+                eat(TOKEN_RPAREN);
+                return std::make_unique<MethodCallNode>(name, member, std::move(args), tokLine, tokCol);
+            }
+            // p.campo — field access
+            return std::make_unique<FieldAccessNode>(name, member, tokLine, tokCol);
         }
         return std::make_unique<VarNode>(name, tokLine, tokCol);
     }
@@ -141,11 +174,12 @@ static NodePtr parsePrimary() {
 
 static NodePtr parseTerm() {
     auto left = parsePrimary();
-    while (current.type == TOKEN_STAR || current.type == TOKEN_SLASH) {
+    while (current.type == TOKEN_STAR || current.type == TOKEN_SLASH || current.type == TOKEN_PERCENT) {
         std::string op = current.value;
+        int tl = current.line, tc = current.col;
         current = nextToken();
         auto right = parsePrimary();
-        left = std::make_unique<BinaryOpNode>(op, std::move(left), std::move(right));
+        left = std::make_unique<BinaryOpNode>(op, std::move(left), std::move(right), tl, tc);
     }
     return left;
 }
@@ -154,9 +188,10 @@ static NodePtr parseAddSub() {
     auto left = parseTerm();
     while (current.type == TOKEN_PLUS || current.type == TOKEN_MINUS) {
         std::string op = current.value;
+        int tl = current.line, tc = current.col;
         current = nextToken();
         auto right = parseTerm();
-        left = std::make_unique<BinaryOpNode>(op, std::move(left), std::move(right));
+        left = std::make_unique<BinaryOpNode>(op, std::move(left), std::move(right), tl, tc);
     }
     return left;
 }
@@ -172,9 +207,10 @@ static NodePtr parseComparison() {
            current.type == TOKEN_LT  || current.type == TOKEN_GT  ||
            current.type == TOKEN_LEQ || current.type == TOKEN_GEQ) {
         std::string op = current.value;
+        int tl = current.line, tc = current.col;
         current = nextToken();
         auto right = parseAddSub();
-        left = std::make_unique<BinaryOpNode>(op, std::move(left), std::move(right));
+        left = std::make_unique<BinaryOpNode>(op, std::move(left), std::move(right), tl, tc);
     }
     return left;
 }
@@ -182,9 +218,10 @@ static NodePtr parseComparison() {
 static NodePtr parseAnd() {
     auto left = parseComparison();
     while (current.type == TOKEN_AND) {
+        int tl = current.line, tc = current.col;
         current = nextToken();
         auto right = parseComparison();
-        left = std::make_unique<BinaryOpNode>("&&", std::move(left), std::move(right));
+        left = std::make_unique<BinaryOpNode>("&&", std::move(left), std::move(right), tl, tc);
     }
     return left;
 }
@@ -192,9 +229,10 @@ static NodePtr parseAnd() {
 static NodePtr parseExpr() {
     auto left = parseAnd();
     while (current.type == TOKEN_OR) {
+        int tl = current.line, tc = current.col;
         current = nextToken();
         auto right = parseAnd();
-        left = std::make_unique<BinaryOpNode>("||", std::move(left), std::move(right));
+        left = std::make_unique<BinaryOpNode>("||", std::move(left), std::move(right), tl, tc);
     }
     return left;
 }
@@ -235,8 +273,24 @@ static NodePtr parseStatement() {
             // current já avançou — simular o que parseStatement faria após ler o IDENT
             if (current.type == TOKEN_LBRACKET) {
                 current = nextToken();
+                int idxLine = current.line, idxCol = current.col;
                 auto index = parseExpr();
                 eat(TOKEN_RBRACKET);
+                // Bound check
+                if (auto* lit = dynamic_cast<IntLitNode*>(index.get())) {
+                    auto it = arraySizes.find(name);
+                    if (it != arraySizes.end()) {
+                        int idx = lit->value;
+                        if (idx < 0 || idx >= it->second) {
+                            std::string ln = getSourceLine(idxLine);
+                            reportError(sourceFile, idxLine, idxCol,
+                                "index " + std::to_string(idx) + " is out of bounds for array '" +
+                                name + "' of size " + std::to_string(it->second) +
+                                " (valid range: 0.." + std::to_string(it->second - 1) + ")",
+                                ln, (int)std::to_string(idx).size());
+                        }
+                    }
+                }
                 eat(TOKEN_ASSIGN);
                 auto val = parseExpr();
                 eat(TOKEN_SEMI);
@@ -244,11 +298,24 @@ static NodePtr parseStatement() {
             }
             if (current.type == TOKEN_DOT) {
                 current = nextToken();
-                std::string field = eat(TOKEN_IDENT).value;
+                std::string member = eat(TOKEN_IDENT).value;
+                // p.metodo(args); — method call como statement
+                if (current.type == TOKEN_LPAREN) {
+                    current = nextToken();
+                    std::vector<NodePtr> args;
+                    while (current.type != TOKEN_RPAREN) {
+                        args.push_back(parseExpr());
+                        if (current.type == TOKEN_COMMA) current = nextToken();
+                    }
+                    eat(TOKEN_RPAREN);
+                    eat(TOKEN_SEMI);
+                    return std::make_unique<MethodCallNode>(name, member, std::move(args), tokLine, tokCol);
+                }
+                // p.campo = expr;
                 eat(TOKEN_ASSIGN);
                 auto val = parseExpr();
                 eat(TOKEN_SEMI);
-                return std::make_unique<FieldAssignNode>(name, field, std::move(val), tokLine, tokCol);
+                return std::make_unique<FieldAssignNode>(name, member, std::move(val), tokLine, tokCol);
             }
             if (current.type == TOKEN_PLUS && peekToken().type == TOKEN_PLUS) {
                 eat(TOKEN_PLUS); eat(TOKEN_PLUS); eat(TOKEN_SEMI);
@@ -318,9 +385,18 @@ static NodePtr parseStatement() {
                     init.push_back(parseExpr());
                     if (current.type == TOKEN_COMMA) current = nextToken();
                 }
+                // Bound check no inicializador
+                if ((int)init.size() > size) {
+                    std::string ln = getSourceLine(tokLine);
+                    reportError(sourceFile, tokLine, tokCol,
+                        "array '" + name + "' has size " + std::to_string(size) +
+                        " but initializer has " + std::to_string(init.size()) + " elements",
+                        ln, (int)name.size());
+                }
                 eat(TOKEN_RBRACE);
             }
             eat(TOKEN_SEMI);
+            arraySizes[name] = size;
             return std::make_unique<ArrayDeclNode>(type, name, size, std::move(init), tokLine, tokCol);
         }
         NodePtr initVal = nullptr;
@@ -471,15 +547,35 @@ ProgramNode parseProgram(const std::string& source, const std::string& filename)
             std::string structName = eat(TOKEN_IDENT).value;
             eat(TOKEN_LBRACE);
             std::vector<StructField> fields;
+            std::vector<StructMethod> methods;
             while (current.type != TOKEN_RBRACE) {
+                // Verifica se é um método (tipo seguido de nome seguido de '(')
+                // ou um campo (tipo seguido de nome seguido de ';' ou '[')
                 DataType ft = parseDataType();
-                std::string fn = eat(TOKEN_IDENT).value;
-                eat(TOKEN_SEMI);
-                fields.push_back({ft, fn});
+                std::string memberName = eat(TOKEN_IDENT).value;
+                if (current.type == TOKEN_LPAREN) {
+                    // É um método
+                    current = nextToken();
+                    std::vector<ParamNode> params;
+                    while (current.type != TOKEN_RPAREN) {
+                        DataType ptype = parseDataType();
+                        std::string pname = eat(TOKEN_IDENT).value;
+                        params.push_back({ptype, pname});
+                        if (current.type == TOKEN_COMMA) current = nextToken();
+                    }
+                    eat(TOKEN_RPAREN);
+                    auto body = parseBlock();
+                    methods.push_back({ft, memberName, std::move(params), std::move(body)});
+                } else {
+                    // É um campo normal
+                    eat(TOKEN_SEMI);
+                    fields.push_back({ft, memberName});
+                }
             }
             eat(TOKEN_RBRACE);
             program.declarations.push_back(
-                std::make_unique<StructDefNode>(structName, std::move(fields), tokLine, tokCol));
+                std::make_unique<StructDefNode>(structName, std::move(fields),
+                                               std::move(methods), tokLine, tokCol));
             continue;
         }
 
@@ -544,6 +640,7 @@ ProgramNode parseProgram(const std::string& source, const std::string& filename)
                     eat(TOKEN_RBRACE);
                 }
                 eat(TOKEN_SEMI);
+                arraySizes[name] = size;
                 program.declarations.push_back(
                     std::make_unique<ArrayDeclNode>(type, name, size, std::move(init), tokLine, tokCol));
             } else {

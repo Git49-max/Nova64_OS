@@ -157,12 +157,46 @@ static Value* codegenExpr(const ASTNode* node) {
 
         Value* l = codegenExpr(n->left.get());
         Value* r = codegenExpr(n->right.get());
-        bool isFloat = l->getType()->isFloatTy() || r->getType()->isFloatTy();
+
+        bool lIsFloat  = l->getType()->isFloatTy();
+        bool rIsFloat  = r->getType()->isFloatTy();
+        bool lIsInt    = l->getType()->isIntegerTy();
+        bool rIsInt    = r->getType()->isIntegerTy();
+        bool lIsString = l->getType()->isPointerTy();
+        bool rIsString = r->getType()->isPointerTy();
+
+        // Verificação de tipos em operações aritméticas
+        if (n->op == "+" || n->op == "-" || n->op == "*" ||
+            n->op == "/" || n->op == "%") {
+
+            if (lIsString || rIsString)
+                reportError(sourceFile, n->line, n->col,
+                    "operator '" + n->op + "' cannot be applied to string values",
+                    getSourceLine(n->line), (int)n->op.size());
+
+            if (lIsFloat && rIsInt)
+                reportError(sourceFile, n->line, n->col,
+                    "type mismatch: cannot apply '" + n->op + "' to 'float' and 'int'",
+                    getSourceLine(n->line), (int)n->op.size());
+
+            if (lIsInt && rIsFloat)
+                reportError(sourceFile, n->line, n->col,
+                    "type mismatch: cannot apply '" + n->op + "' to 'int' and 'float'",
+                    getSourceLine(n->line), (int)n->op.size());
+        }
+
+        if (n->op == "%" && (lIsFloat || rIsFloat))
+            reportError(sourceFile, n->line, n->col,
+                "operator '%' cannot be applied to float values",
+                getSourceLine(n->line), (int)n->op.size());
+
+        bool isFloat = lIsFloat || rIsFloat;
 
         if (n->op == "+") return isFloat ? builder.CreateFAdd(l, r) : builder.CreateAdd(l, r);
         if (n->op == "-") return isFloat ? builder.CreateFSub(l, r) : builder.CreateSub(l, r);
         if (n->op == "*") return isFloat ? builder.CreateFMul(l, r) : builder.CreateMul(l, r);
         if (n->op == "/") return isFloat ? builder.CreateFDiv(l, r) : builder.CreateSDiv(l, r);
+        if (n->op == "%") return isFloat ? builder.CreateFRem(l, r) : builder.CreateSRem(l, r);
 
         Value* cmp = nullptr;
         if (isFloat) {
@@ -244,6 +278,40 @@ static Value* codegenExpr(const ASTNode* node) {
                     "variable '" + n->varName + "' was not declared in this scope",
                     getSourceLine(n->line), (int)n->varName.size());
         return nullptr;
+    }
+
+    if (auto* n = dynamic_cast<const MethodCallNode*>(node)) {
+        // Resolve o ponteiro para o struct (local ou global)
+        Value* selfPtr = nullptr;
+        std::string typeName;
+        auto lit = localStructs.find(n->varName);
+        if (lit != localStructs.end()) {
+            selfPtr  = lit->second.first;
+            typeName = lit->second.second;
+        } else {
+            auto git = globalStructs.find(n->varName);
+            if (git != globalStructs.end()) {
+                selfPtr  = git->second.first;
+                typeName = git->second.second;
+            }
+        }
+        if (!selfPtr)
+            reportError(sourceFile, n->line, n->col,
+                "variable '" + n->varName + "' was not declared in this scope",
+                getSourceLine(n->line), (int)n->varName.size());
+
+        std::string funcName = typeName + "__" + n->methodName;
+        Function* fn = llvmModule->getFunction(funcName);
+        if (!fn)
+            reportError(sourceFile, n->line, n->col,
+                "struct '" + typeName + "' has no method '" + n->methodName + "'",
+                getSourceLine(n->line), (int)n->methodName.size());
+
+        std::vector<Value*> args;
+        args.push_back(selfPtr); // self
+        for (auto& arg : n->args)
+            args.push_back(codegenExpr(arg.get()));
+        return builder.CreateCall(fn, args);
     }
 
     reportError(sourceFile, 0, 0, "Internal error: unknown node type in codegen", "");
@@ -396,6 +464,25 @@ static void codegenStmt(const ASTNode* node, Function* fn) {
         AllocaInst* alloca = createEntryAlloca(fn, n->name, type);
         localValues[n->name] = alloca;
         if (n->init) {
+            // Verifica mismatch entre tipo declarado e tipo do literal inicial
+            bool declaredFloat = (n->type == DataType::Float);
+            bool declaredInt   = (n->type == DataType::Int);
+            bool initIsInt     = dynamic_cast<const IntLitNode*>(n->init.get()) != nullptr;
+            bool initIsFloat   = dynamic_cast<const FloatLitNode*>(n->init.get()) != nullptr;
+
+            if (declaredFloat && initIsInt)
+                reportError(sourceFile, n->line, n->col,
+                    "type mismatch: variable '" + n->name + "' is declared as 'float' "
+                    "but assigned an 'int' literal — use '" + n->name + " = " + 
+                    std::to_string(dynamic_cast<const IntLitNode*>(n->init.get())->value) + ".0' instead",
+                    getSourceLine(n->line), (int)n->name.size());
+
+            if (declaredInt && initIsFloat)
+                reportError(sourceFile, n->line, n->col,
+                    "type mismatch: variable '" + n->name + "' is declared as 'int' "
+                    "but assigned a 'float' literal — use 'float " + n->name + "' instead",
+                    getSourceLine(n->line), (int)n->name.size());
+
             Value* val = codegenExpr(n->init.get());
             builder.CreateStore(val, alloca);
         }
@@ -563,21 +650,47 @@ static void codegenGlobalVar(const VarDeclNode* node) {
     Constant* init = nullptr;
 
     if (node->init) {
+        bool declaredFloat = (node->type == DataType::Float);
+        bool declaredInt   = (node->type == DataType::Int);
+        bool initIsInt     = dynamic_cast<const IntLitNode*>(node->init.get()) != nullptr;
+        bool initIsFloat   = dynamic_cast<const FloatLitNode*>(node->init.get()) != nullptr;
+
+        if (declaredFloat && initIsInt)
+            reportError(sourceFile, node->line, node->col,
+                "type mismatch: variable '" + node->name + "' is declared as 'float' "
+                "but assigned an 'int' literal — use '" + node->name + " = " +
+                std::to_string(dynamic_cast<const IntLitNode*>(node->init.get())->value) + ".0' instead",
+                getSourceLine(node->line), (int)node->name.size());
+
+        if (declaredInt && initIsFloat)
+            reportError(sourceFile, node->line, node->col,
+                "type mismatch: variable '" + node->name + "' is declared as 'int' "
+                "but assigned a 'float' literal — use 'float " + node->name + "' instead",
+                getSourceLine(node->line), (int)node->name.size());
+
         if (auto* n = dynamic_cast<const IntLitNode*>(node->init.get()))
             init = ConstantInt::get(type, n->value);
         else if (auto* n = dynamic_cast<const FloatLitNode*>(node->init.get()))
             init = ConstantFP::get(type, n->value);
+        else if (auto* n = dynamic_cast<const StringLitNode*>(node->init.get())) {
+            // String global: cria uma constante de string e armazena o ponteiro
+            Constant* strConst = ConstantDataArray::getString(ctx, n->value, true);
+            auto* strGV = new GlobalVariable(*llvmModule, strConst->getType(), true,
+                                              GlobalValue::PrivateLinkage, strConst,
+                                              node->name + ".str");
+            strGV->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
+            init = ConstantExpr::getPointerCast(strGV, PointerType::getUnqual(ctx));
+        }
         else
-            reportError(sourceFile, 0, 0,
-                       "The global variable '" + node->name + "' can only be initialized with a literal (e.g., int x = 10;), expressions are not allowed in the global scope.",
-                        "");
+            reportError(sourceFile, node->line, node->col,
+                       "global variable '" + node->name + "' can only be initialized with a literal — expressions are not allowed in global scope",
+                        getSourceLine(node->line), (int)node->name.size());
     } else {
         init = Constant::getNullValue(type);
     }
 
     auto* gv = new GlobalVariable(*llvmModule, type, false,
                                    GlobalValue::ExternalLinkage, init, node->name);
-    // Registra no mapa de globais (separado das locais!)
     globalValues[node->name] = gv;
 }
 
@@ -617,6 +730,16 @@ void codegenProgram(const ProgramNode& program, const std::string& outputFile,
             StructType* st = StructType::create(ctx, fieldTypes, sd->name);
             structTypes[sd->name] = st;
             structFields[sd->name] = sd->fields;
+            // Pré-declara métodos como NomeTipo__metodo(NomeTipo* self, ...)
+            for (auto& m : sd->methods) {
+                std::vector<Type*> paramTypes;
+                paramTypes.push_back(PointerType::getUnqual(ctx)); // self
+                for (auto& p : m.params)
+                    paramTypes.push_back(llvmType(p.type));
+                FunctionType* ft = FunctionType::get(llvmType(m.returnType), paramTypes, false);
+                Function::Create(ft, Function::ExternalLinkage,
+                                 sd->name + "__" + m.name, llvmModule.get());
+            }
         }
         if (auto* fn = dynamic_cast<const FunctionNode*>(decl.get())) {
             std::vector<Type*> paramTypes;
@@ -647,6 +770,75 @@ void codegenProgram(const ProgramNode& program, const std::string& outputFile,
             auto* gv = new GlobalVariable(*llvmModule, st, false,
                                           GlobalValue::ExternalLinkage, init, sd->varName);
             globalStructs[sd->varName] = {gv, sd->typeName};
+        }
+        // StructDefNode: gera os corpos dos métodos
+        else if (auto* sd = dynamic_cast<const StructDefNode*>(decl.get())) {
+            StructType* st = structTypes[sd->name];
+            for (auto& m : sd->methods) {
+                std::string funcName = sd->name + "__" + m.name;
+                Function* func = llvmModule->getFunction(funcName);
+
+                // Nomeia os parâmetros: self + params do método
+                size_t pi = 0;
+                for (auto& arg : func->args()) {
+                    if (pi == 0) arg.setName("self");
+                    else         arg.setName(m.params[pi - 1].name);
+                    pi++;
+                }
+
+                BasicBlock* bb = BasicBlock::Create(ctx, "entry", func);
+                builder.SetInsertPoint(bb);
+
+                localValues.clear();
+                localArrays.clear();
+                localStructs.clear();
+
+                // self é ponteiro para o struct — expõe campos como variáveis locais via GEP
+                Value* selfPtr = func->arg_begin();
+                auto& fields = structFields[sd->name];
+                for (int fi = 0; fi < (int)fields.size(); fi++) {
+                    Value* gep = builder.CreateStructGEP(st, selfPtr, fi, fields[fi].name);
+                    // Guarda o GEP como AllocaInst* falso não funciona —
+                    // usamos um mapa separado para self fields
+                    // Hack limpo: cria alloca local e copia o valor de entrada
+                    AllocaInst* alloca = createEntryAlloca(func, fields[fi].name, llvmType(fields[fi].type));
+                    Value* loaded = builder.CreateLoad(llvmType(fields[fi].type), gep, fields[fi].name);
+                    builder.CreateStore(loaded, alloca);
+                    localValues[fields[fi].name] = alloca;
+                }
+
+                // Parâmetros normais
+                pi = 1;
+                for (auto& arg : func->args()) {
+                    if (pi == 1) { pi++; continue; } // pula self
+                    AllocaInst* alloca = createEntryAlloca(func, std::string(arg.getName()), arg.getType());
+                    builder.CreateStore(&arg, alloca);
+                    localValues[std::string(arg.getName())] = alloca;
+                    pi++;
+                }
+
+                // Gera corpo
+                for (auto& stmt : m.body)
+                    codegenStmt(stmt.get(), func);
+
+                // Escreve campos modificados de volta no struct (self)
+                for (int fi = 0; fi < (int)fields.size(); fi++) {
+                    auto it = localValues.find(fields[fi].name);
+                    if (it != localValues.end()) {
+                        Value* gep = builder.CreateStructGEP(st, selfPtr, fi, fields[fi].name + ".ptr");
+                        Value* val = builder.CreateLoad(llvmType(fields[fi].type), it->second, fields[fi].name);
+                        builder.CreateStore(val, gep);
+                    }
+                }
+
+                if (!builder.GetInsertBlock()->getTerminator()) {
+                    if (m.returnType == DataType::Void)
+                        builder.CreateRetVoid();
+                    else
+                        builder.CreateRet(ConstantInt::get(Type::getInt32Ty(ctx), 0));
+                }
+                verifyFunction(*func);
+            }
         }
         // StructDefNode já foi processado na primeira passagem
     }

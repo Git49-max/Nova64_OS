@@ -1,3 +1,18 @@
-void main(){
-    print("Hello, World!");
+struct Contador {
+    int valor;
+
+    void incrementar(int n) {
+        valor += n;
+    }
+
+    int get() {
+        return valor;
+    }
+}
+
+void main() {
+    Contador c;
+    c.valor = 0;
+    c.incrementar(5);
+    print(c.get());   // 5
 }
