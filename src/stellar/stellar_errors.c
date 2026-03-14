@@ -1,7 +1,7 @@
 #ifdef STELLAR_HOST
 
 #include "stellar/stellar_errors.h"
-
+extern int stellar_lsp_mode;
 // Função auxiliar interna para limpar binários corrompidos em caso de erro
 static void get_bin_name(char* filename, char* out) {
     strcpy(out, filename);
@@ -22,6 +22,13 @@ void error_exit(char* file, char* src, int ptr, char* msg, int len, char* sugges
         if (src[i] == '\n') { line++; l_start = i + 1; }
     }
     int col = ptr - l_start + 1;
+
+    if (stellar_lsp_mode) {
+        printf("%s|%d|%d|%d|%s", file, line, col, (len > 0 ? len : 1), msg);
+        if (suggest) printf(" (Did you mean \"%s\"?)", suggest);
+        printf("\n");
+        exit(1); 
+    }
 
     printf(BOLD "%s:%d:%d: " RED "error: " RESET BOLD "%s" RESET, file, line, col, msg);
     if (suggest) printf(". Did you mean " BOLD "\"%s\"" RESET "?", suggest);

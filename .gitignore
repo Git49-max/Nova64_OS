@@ -18,3 +18,6 @@ _redirects
 *.lua
 *.txt
 host_main.c
+*.log
+package-lock.json
+package.json

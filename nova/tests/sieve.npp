@@ -1,0 +1,27 @@
+int limit = 100000000;
+int isPrime[100000001];
+
+void main() {
+    int i = 2;
+    while (i <= 10000) { // Diminuí o teto do i para evitar o estouro no i*i
+        if (isPrime[i] == 0) then {
+            // Se i > 46340, i*i estoura o int de 32 bits.
+            // Para testar 100M agora, vamos usar i * 2:
+            int j = i + i; 
+            while (j <= limit) {
+                if (j > 0) then { // Proteção extra contra overflow
+                    isPrime[j] = 1;
+                }
+                j += i;
+            }
+        }
+        i++;
+    }
+    int n = 2;
+    while(n <= limit){
+        if(isPrime[n] == 0) then {
+            print(n);
+        }
+        n++;
+    }
+}
