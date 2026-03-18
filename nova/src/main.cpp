@@ -4,13 +4,14 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
-#include <chrono>
 #include <ncurses.h>
 #include <vector>
+#include <set>
 #include <algorithm>
 #include <unistd.h>   // getcwd
 #include "../include/ast.h"
 #include "../include/codegen.h"
+#include "../include/error.h"
 
 ProgramNode parseProgram(const std::string& source, const std::string& filename);
 
@@ -30,16 +31,16 @@ static void printError(const std::string& msg) {
 
 // ── --help ────────────────────────────────────────────────────────────────────
 static void printHelp() {
-    std::cout << ANSI_BOLD << "Nova Compiler - Beta 1.0.0\n" << ANSI_RESET;
+    std::cout << ANSI_BOLD << "Nova Compiler - Beta 1.3.0\n" << ANSI_RESET;
     std::cout << "\n";
     std::cout << ANSI_BOLD << "Usage:\n" << ANSI_RESET;
-    std::cout << "  n++ <file.npp> [options]\n";
+    std::cout << "  n++ <file.npp> [file2.npp ...] [options]\n";
     std::cout << "  n++ -w [file.npp]\n";
     std::cout << "  n++ --version\n";
     std::cout << "  n++ --help\n";
     std::cout << "\n";
     std::cout << ANSI_BOLD << "Options:\n" << ANSI_RESET;
-    std::cout << ANSI_CYAN << "  -o <out>      " << ANSI_RESET << "Set output file name\n";
+    std::cout << ANSI_CYAN << "  -o <out>      " << ANSI_RESET << "Set output file name (.exe/.dll → Windows PE32+)\n";
     std::cout << ANSI_CYAN << "  -O2           " << ANSI_RESET << "Enable level 2 optimizations\n";
     std::cout << ANSI_CYAN << "  -O3           " << ANSI_RESET << "Enable level 3 optimizations (aggressive)\n";
     std::cout << ANSI_CYAN << "  -w [file]     " << ANSI_RESET << "Open interactive editor in terminal\n";
@@ -49,8 +50,10 @@ static void printHelp() {
     std::cout << ANSI_BOLD << "Examples:\n" << ANSI_RESET;
     std::cout << ANSI_GRAY << "  n++ hello.npp\n";
     std::cout << "  n++ hello.npp -o hello -O2\n";
-    std::cout << "  n++ -w                      # new file\n";
-    std::cout << "  n++ -w existing.npp         # edit existing file\n" << ANSI_RESET;
+    std::cout << "  n++ hello.npp -o hello.exe        # cross-compile to Windows\n";
+    std::cout << "  n++ hello.npp -o hello.dll        # Windows DLL\n";
+    std::cout << "  n++ -w                            # new file\n";
+    std::cout << "  n++ -w existing.npp               # edit existing file\n" << ANSI_RESET;
     std::cout << "\n";
     std::cout << ANSI_BOLD << "Editor shortcuts (-w mode):\n" << ANSI_RESET;
     std::cout << ANSI_GRAY << "  Ctrl+S   Save and compile\n";
@@ -60,58 +63,184 @@ static void printHelp() {
     std::cout << "\n";
 }
 
+// ── Detecta se o output alvo é Windows ───────────────────────────────────────
+static bool isWindowsTarget(const std::string& outFile) {
+    auto dot = outFile.rfind('.');
+    if (dot == std::string::npos) return false;
+    std::string ext = outFile.substr(dot);
+    return (ext == ".exe" || ext == ".dll");
+}
+
 // ── Link command builder ──────────────────────────────────────────────────────
-static std::string buildLinkCmd(const std::string& objFile, const std::string& outFile) {
+// objFiles: lista de todos os .o gerados
+static std::string buildLinkCmd(const std::vector<std::string>& objFiles,
+                                const std::string& outFile) {
     std::string ext;
     auto dot = outFile.rfind('.');
-    if (dot != std::string::npos)
-        ext = outFile.substr(dot);
-    std::string cmd = "clang -m64 " + objFile;
+    if (dot != std::string::npos) ext = outFile.substr(dot);
+
+    std::string objs;
+    for (auto& o : objFiles) objs += " " + o;
+
+    // ── Alvo Windows: .exe ou .dll → usa MinGW (gera PE32+)
+    if (ext == ".exe" || ext == ".dll") {
+        std::string cmd = "x86_64-w64-mingw32-gcc -m64" + objs;
+        if (ext == ".dll") cmd += " -shared";
+        cmd += " -o " + outFile;
+        cmd += " -lmingw32 -lmingwex -lmsvcrt";
+        return cmd;
+    }
+
+    // ── Alvo host (Linux/macOS)
+    std::string cmd = "clang -m64" + objs;
     if (ext == ".so" || ext == ".dylib") {
         cmd += " -shared";
     } else if (ext == ".a") {
-        return "ar rcs " + outFile + " " + objFile;
+        return "ar rcs " + outFile + objs;
     }
     cmd += " -o " + outFile;
     return cmd;
 }
 
-// ── Compilação com progresso e tempo ─────────────────────────────────────────
-static int compileFile(const std::string& sourceFile, const std::string& outputFileArg, int optLevel) {
-    std::ifstream file(sourceFile);
-    if (!file) { printError("file '" + sourceFile + "' not found"); return 1; }
+// ── Detecta stdlib includes nos arquivos fonte ────────────────────────────────
+// Varre cada .npp buscando linhas "#include <nome.nh>" e retorna os .npp
+// correspondentes em NOVA_STDLIB_PATH que ainda não estão na lista de arquivos.
+static std::vector<std::string> detectStdlibModules(
+        const std::vector<std::string>& sourceFiles) {
+
+    const char* envPath = std::getenv("NOVA_STDLIB_PATH");
+    std::string stdlibDir = envPath ? std::string(envPath) : "/usr/local/lib/nova";
+
+    std::vector<std::string> result;
+    std::set<std::string> added; // evita duplicatas
+
+    // Pré-popula com os arquivos já na lista (não queremos readicionar)
+    for (auto& s : sourceFiles) added.insert(s);
+
+    for (auto& src : sourceFiles) {
+        std::ifstream f(src);
+        if (!f) continue;
+        std::string line;
+        while (std::getline(f, line)) {
+            // Busca padrão: #include <nome.nh>
+            size_t hash = line.find('#');
+            if (hash == std::string::npos) continue;
+            size_t inc = line.find("include", hash + 1);
+            if (inc == std::string::npos) continue;
+            size_t lt = line.find('<', inc + 7);
+            size_t gt = line.find('>', lt == std::string::npos ? 0 : lt + 1);
+            if (lt == std::string::npos || gt == std::string::npos) continue;
+
+            std::string headerName = line.substr(lt + 1, gt - lt - 1);
+            // Troca extensão .nh → .npp
+            std::string moduleName = headerName;
+            if (moduleName.size() > 3 &&
+                moduleName.substr(moduleName.size() - 3) == ".nh")
+                moduleName = moduleName.substr(0, moduleName.size() - 3) + ".npp";
+
+            std::string modulePath = stdlibDir + "/" + moduleName;
+
+            // Só adiciona se o arquivo existir e ainda não estiver na lista
+            if (added.count(modulePath) == 0) {
+                std::ifstream check(modulePath);
+                if (check.good()) {
+                    result.push_back(modulePath);
+                    added.insert(modulePath);
+                }
+            }
+        }
+    }
+    return result;
+}
+
+// ── Compila um único arquivo .npp para .o ─────────────────────────────────────
+static std::string compileSingleFile(const std::string& srcFile, int optLevel,
+                                     bool winTarget, const std::string& objOut) {
+    std::ifstream file(srcFile);
+    if (!file) { printError("file '" + srcFile + "' not found"); return ""; }
     std::stringstream buf;
     buf << file.rdbuf();
 
+    ProgramNode program = parseProgram(buf.str(), srcFile);
+    codegenProgram(program, objOut, srcFile, optLevel, winTarget);
+    return objOut;
+}
+
+// ── Compilação silenciosa (sem output a não ser erros/warnings) ───────────────
+static int compileFile(const std::vector<std::string>& sourceFiles,
+                       const std::string& outputFileArg, int optLevel) {
+    if (sourceFiles.empty()) { printError("no source files specified"); return 1; }
+
+    // Determina o nome de saída
     std::string outputFile = outputFileArg;
     if (outputFile.empty()) {
-        outputFile = sourceFile;
+        // Usa o nome do primeiro arquivo sem extensão
+        outputFile = sourceFiles[0];
         auto dot = outputFile.rfind('.');
         if (dot != std::string::npos) outputFile = outputFile.substr(0, dot);
     }
-    std::string objFile = outputFile + ".o";
 
-    std::cout << "\n" << ANSI_BOLD << "Compiling " << ANSI_CYAN << sourceFile << ANSI_RESET << "\n\n";
+    bool winTarget = isWindowsTarget(outputFile);
 
-    auto total_start = std::chrono::high_resolution_clock::now();
+    // Detecta e injeta automaticamente os .npp da stdlib referenciados via #include <...>
+    std::vector<std::string> allFiles = sourceFiles;
+    std::vector<std::string> stdlibModules = detectStdlibModules(sourceFiles);
+    for (auto& m : stdlibModules)
+        allFiles.push_back(m);
 
-    auto t0 = std::chrono::high_resolution_clock::now();
-    ProgramNode program = parseProgram(buf.str(), sourceFile);
+    // Compila cada arquivo fonte para seu próprio .o
+    std::vector<std::string> objFiles;
+    bool projectHasMain = false;
+    for (auto& src : allFiles) {
+        // .o fica em /tmp para não poluir o diretório do usuário
+        std::string base = src;
+        // Remove path e extensão para o nome do .o
+        auto slash = base.rfind('/');
+        if (slash != std::string::npos) base = base.substr(slash + 1);
+        auto dot = base.rfind('.');
+        if (dot != std::string::npos) base = base.substr(0, dot);
+        std::string objPath = "/tmp/nova_" + base + "_" + std::to_string(objFiles.size()) + ".o";
 
-    t0 = std::chrono::high_resolution_clock::now();
-    codegenProgram(program, objFile, sourceFile, optLevel);
+        std::string obj = compileSingleFile(src, optLevel, winTarget, objPath);
+        if (obj.empty()) return 1;
+        objFiles.push_back(obj);
 
-    std::string linkCmd = buildLinkCmd(objFile, outputFile);
-    int ret = system(linkCmd.c_str());
-    std::remove(objFile.c_str());
+        // Checa se este arquivo continha main (lendo o fonte novamente é caro;
+        // compileSingleFile já rodou — o codegen sabe via isLibraryFile)
+        // Mais simples: fazemos uma passagem rápida pelo fonte buscando "void main" ou "int main"
+        {
+            std::ifstream f(src);
+            std::string content((std::istreambuf_iterator<char>(f)),
+                                 std::istreambuf_iterator<char>());
+            if (content.find("main") != std::string::npos)
+                projectHasMain = true;
+        }
+    }
 
-    if (ret != 0) { printError("linking failed"); return 1; }
+    // Emite warnings de funções definidas mas nunca chamadas em todo o projeto
+    flushFunctionWarnings(projectHasMain);
 
-    auto total_end = std::chrono::high_resolution_clock::now();
-    double totalMs = std::chrono::duration<double, std::milli>(total_end - total_start).count();
-    std::cout << "\n" << ANSI_BLUE << ANSI_BOLD
-              << "  ✓ Built '" << outputFile << "' in " << totalMs << "ms"
-              << ANSI_RESET << "\n\n";
+    // Linka todos os .o juntos — captura stderr do linker para exibir erros amigáveis
+    std::string linkCmd = buildLinkCmd(objFiles, outputFile);
+
+    // Redireciona stderr do linker para arquivo temporário
+    std::string linkerErrFile = "/tmp/nova_linker_" + std::to_string(getpid()) + ".txt";
+    int ret = system((linkCmd + " 2>" + linkerErrFile).c_str());
+
+    // Remove os .o temporários
+    for (auto& o : objFiles) std::remove(o.c_str());
+
+    if (ret != 0) {
+        std::string linkerOutput;
+        {
+            std::ifstream ef(linkerErrFile);
+            if (ef) { std::stringstream eb; eb << ef.rdbuf(); linkerOutput = eb.str(); }
+        }
+        std::remove(linkerErrFile.c_str());
+        reportLinkerError(linkerOutput, outputFile, allFiles);
+        return 1;
+    }
+    std::remove(linkerErrFile.c_str());
     return 0;
 }
 
@@ -412,21 +541,20 @@ static void runEditor(const std::string& editFile,
         wattroff(statusWin, COLOR_PAIR(scol) | A_BOLD);
         wrefresh(statusWin);
 
-        // ── Editor area ───────────────────────────────────────────────
+        // ── Linhas do editor ──────────────────────────────────────────
         werase(editorWin);
         for (int r = 0; r < editorH; r++) {
             int lineIdx = scrollRow + r;
             if (lineIdx < (int)lines.size()) {
-                // Número de linha
-                char lnbuf[16];
-                snprintf(lnbuf, sizeof(lnbuf), " %4d ", lineIdx + 1);
+                // Número da linha
                 wattron(editorWin, COLOR_PAIR(COL_LINENO) | A_BOLD);
+                char lnbuf[16];
+                snprintf(lnbuf, sizeof(lnbuf), "%4d  ", lineIdx + 1);
                 mvwaddstr(editorWin, r, 0, lnbuf);
                 wattroff(editorWin, COLOR_PAIR(COL_LINENO) | A_BOLD);
-                // Conteúdo da linha
+                // Conteúdo com highlight
                 renderLine(editorWin, r, LINENO_WIDTH, lines[lineIdx], scrollX);
             } else {
-                // Linha vazia com "~"
                 wattron(editorWin, COLOR_PAIR(COL_LINENO) | A_BOLD);
                 mvwaddstr(editorWin, r, 0, "    ~ ");
                 wattroff(editorWin, COLOR_PAIR(COL_LINENO) | A_BOLD);
@@ -472,7 +600,7 @@ static void runEditor(const std::string& editFile,
     auto saveAndCompile = [&]() -> bool {
         if (!saveFile()) return false;
         endwin();
-        int ret = compileFile(filename, outputFileArg, optLevel);
+        int ret = compileFile({filename}, outputFileArg, optLevel);
         // Reinicia ncurses
         initscr(); raw(); keypad(stdscr, TRUE); noecho(); curs_set(1);
         initEditorColors();
@@ -595,17 +723,18 @@ static void runEditor(const std::string& editFile,
 // MAIN
 // ═════════════════════════════════════════════════════════════════════════════
 int main(int argc, char* argv[]) {
-    if (argc < 2) { printHelp(); return 1; }
+    if (argc < 2) { std::cout << "\033[1;31mFatal Error:\033[0m No file specified\n"; return 1; }
 
     if (std::string(argv[1]) == "--version") {
-        std::cout << ANSI_BOLD << "Nova Compiler" << ANSI_RESET << " - Beta 1.0.0\n";
+        std::cout << ANSI_BOLD << "Nova Compiler" << ANSI_RESET << " - Beta 1.3.0\n";
         return 0;
     }
     if (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h") {
         printHelp(); return 0;
     }
 
-    std::string sourceFile, outputFile;
+    std::vector<std::string> sourceFiles;
+    std::string outputFile;
     int  optLevel   = 0;
     bool editorMode = false;
 
@@ -620,15 +749,18 @@ int main(int argc, char* argv[]) {
             editorMode = true;
         } else if (arg[0] == '-') {
             printError("unknown argument '" + arg + "'");
-            printHelp(); return 1;
+            return 1;
         } else {
-            if (!sourceFile.empty()) { printError("multiple source files are not supported"); return 1; }
-            sourceFile = arg;
+            sourceFiles.push_back(arg);
         }
     }
 
-    if (editorMode) { runEditor(sourceFile, outputFile, optLevel); return 0; }
+    if (editorMode) {
+        std::string editFile = sourceFiles.empty() ? "" : sourceFiles[0];
+        runEditor(editFile, outputFile, optLevel);
+        return 0;
+    }
 
-    if (sourceFile.empty()) { printError("no source file specified"); printHelp(); return 1; }
-    return compileFile(sourceFile, outputFile, optLevel);
+    if (sourceFiles.empty()) { printError("no source file specified"); return 1; }
+    return compileFile(sourceFiles, outputFile, optLevel);
 }

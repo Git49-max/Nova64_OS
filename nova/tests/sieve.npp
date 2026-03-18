@@ -1,27 +1,32 @@
-int limit = 100000000;
-int isPrime[100000001];
+#include <stdio.nh>
 
-void main() {
-    int i = 2;
-    while (i <= 10000) { // Diminuí o teto do i para evitar o estouro no i*i
-        if (isPrime[i] == 0) then {
-            // Se i > 46340, i*i estoura o int de 32 bits.
-            // Para testar 100M agora, vamos usar i * 2:
-            int j = i + i; 
-            while (j <= limit) {
-                if (j > 0) then { // Proteção extra contra overflow
-                    isPrime[j] = 1;
-                }
-                j += i;
+int limit = 10000000;
+char isPrime[5000001]; 
+
+int main() {
+    // Cálculo (Malandragem de pular pares)
+    for(int i = 0; (2 * i + 3) * (2 * i + 3) <= limit; i++) {
+        if(isPrime[i] == 0) then {
+            int p = 2 * i + 3; 
+            int j = (p * p - 3) / 2;
+            while(j <= (limit - 3) / 2) {
+                isPrime[j] = 1;
+                j += p;
             }
         }
-        i++;
     }
-    int n = 2;
-    while(n <= limit){
+
+    // A CORREÇÃO ESTÁ AQUI:
+    int count = 1; // 1 porque o número 2 é primo e não está no array
+    int max_idx = (limit - 3) / 2;
+
+    for(int n = 0; n <= max_idx; n++) {
         if(isPrime[n] == 0) then {
-            print(n);
+            count++;
         }
-        n++;
     }
+
+    // Se a Nova usar o printf do C, use %ld para long
+    std::printf("Primos encontrados: %ld\n", count); 
+    return 0;
 }

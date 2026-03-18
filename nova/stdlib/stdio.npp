@@ -1,0 +1,24 @@
+#include <stdio.nh>
+void print(int n) {
+    std::printf("%d\n", n);
+}
+
+void print(double n) {
+    std::printf("%f\n", n);
+}
+
+void print(float n) {
+    std::printf("%f\n", (double)n);
+}
+
+void print(string s) {
+    std::printf("%s\n", s);
+}
+
+void print(char c) {
+    std::printf("%c\n", c);
+}
+
+void print(long n) {
+    std::printf("%ld\n", n);
+}
