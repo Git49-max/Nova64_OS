@@ -1396,25 +1396,23 @@ static std::vector<ParamNode> parseFnParams(const std::string& fnName,
             break;
         }
 
-        // &self  ou  &mut self
+        // &self, &mut self ou & [mut] name: Type
+        bool isRef = false;
+        bool isMut = false;
         if (current.type == TOKEN_AMPERSAND) {
+            isRef = true;
             current = nextToken();
-            bool mutSelf = false;
             if (current.type == TOKEN_MUT) {
-                mutSelf = true;
-                current = nextToken(); // &mut self
+                isMut = true;
+                current = nextToken();
             }
             if (current.type == TOKEN_SELF) {
                 if (hasRefSelf) *hasRefSelf = true;
-                if (mutSelf) mutableReferences.insert("self");
+                if (isMut) mutableReferences.insert("self");
                 current = nextToken();
                 if (current.type == TOKEN_COMMA) current = nextToken();
                 continue;
             }
-            reportError(sourceFile, current.line, current.col,
-                "expected 'self' after '&' in method receiver",
-                getSourceLine(current.line), std::max(1,(int)current.value.size()),
-                "use '&self' or '&mut self' as the first parameter of an impl method");
         }
 
         // self (sem &) — não suportado, erro explícito
@@ -1431,6 +1429,13 @@ static std::vector<ParamNode> parseFnParams(const std::string& fnName,
         eat(TOKEN_COLON);
         DataType ptype = parseDataType();
         std::string pStructType = (ptype == DataType::Custom) ? lastCustomTypeName : "";
+
+        // Se começamos com &, injetamos no pStructType se já não for referência
+        if (isRef && pStructType.find('&') == std::string::npos) {
+            std::string baseName = dataTypeToString(ptype);
+            pStructType = (isMut ? "&mut " : "&") + baseName;
+            ptype = DataType::Custom;
+        }
 
         // Suporte a arrays como parâmetros: name: Type[N] ou name: Type[]
         // Codifica como "__arr__N__name" para o codegen registrar em localArrays

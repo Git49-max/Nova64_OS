@@ -1146,30 +1146,44 @@ static Value* codegenExpr(const ASTNode* node) {
         auto spIt = structParamFuncs.find(n->name);
 
         for (size_t i = 0; i < n->args.size(); i++) {
-            // Verifica se este param é do tipo struct
+            // Verifica se este param é do tipo struct ou referência
             bool isStructParam = false;
+            std::string paramTypeName;
             if (spIt != structParamFuncs.end()) {
-                for (auto& [idx, typeName] : spIt->second) {
-                    if ((size_t)idx == i) { isStructParam = true; break; }
+                for (auto& entry : spIt->second) {
+                    if ((size_t)entry.first == i) { 
+                        isStructParam = true; 
+                        paramTypeName = entry.second;
+                        break; 
+                    }
                 }
             }
 
             if (isStructParam) {
-                // O argumento deve ser um nome de variável struct
-                if (auto* varN = dynamic_cast<const VarNode*>(n->args[i].get())) {
-                    std::string sType;
-                    Value* ptr = getStructPtrValue(varN->name, sType);
-                    if (!ptr)
-                        reportError(sourceFile, n->line, n->col,
-                                    "struct variable '" + varN->name + "' was not declared",
-                                    getSourceLine(n->line), (int)varN->name.size());
-                    args.push_back(ptr);
+                // Se for referência (&T ou &mut T), avalia a expressão diretamente
+                if (!paramTypeName.empty() && paramTypeName[0] == '&') {
+                    Value* val = codegenExpr(n->args[i].get());
+                    // Se o resultado for i64 (ponteiro), converte para ptr do LLVM se necessário
+                    if (val->getType()->isIntegerTy(64))
+                        val = builder.CreateIntToPtr(val, PointerType::getUnqual(ctx));
+                    args.push_back(val);
                 } else {
-                    reportError(sourceFile, n->line, n->col,
-                                "struct argument must be a struct variable name",
-                                getSourceLine(n->line), (int)n->name.size(),
-                                "pass a named struct variable: " + n->name + "(myStruct, ...)");
-                    return nullptr;
+                    // Parâmetro de struct por valor: o argumento deve ser um nome de variável
+                    if (auto* varN = dynamic_cast<const VarNode*>(n->args[i].get())) {
+                        std::string sType;
+                        Value* ptr = getStructPtrValue(varN->name, sType);
+                        if (!ptr)
+                            reportError(sourceFile, n->line, n->col,
+                                        "struct variable '" + varN->name + "' was not declared",
+                                        getSourceLine(n->line), (int)varN->name.size());
+                        args.push_back(ptr);
+                    } else {
+                        reportError(sourceFile, n->line, n->col,
+                                    "struct argument must be a struct variable name",
+                                    getSourceLine(n->line), (int)n->name.size(),
+                                    "pass a named struct variable: " + n->name + "(myStruct, ...)");
+                        return nullptr;
+                    }
                 }
             } else {
                 args.push_back(codegenExpr(n->args[i].get()));
