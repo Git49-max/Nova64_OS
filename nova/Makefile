@@ -6,7 +6,7 @@ CXXFLAGS = -std=c++17 -Wall -Iinclude $(LLVM_CXXFLAGS)
 LDFLAGS_DYNAMIC = $(shell llvm-config --ldflags --system-libs --libs all)
 LIBS = -lncurses
 
-SRCS = src/main.cpp src/lexer.cpp src/parser.cpp src/codegen.cpp
+SRCS = src/main.cpp src/lexer.cpp src/parser.cpp src/codegen.cpp src/analysis.cpp
 TARGET = n++
 
 # Compilação padrão (Desenvolvimento)

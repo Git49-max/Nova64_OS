@@ -2,71 +2,107 @@
 #include <string>
 
 enum TokenType{
+    // Literais
     TOKEN_INT_LIT,
     TOKEN_FLOAT_LIT,
     TOKEN_STRING_LIT,
-    TOKEN_CHAR_LIT,   // 'a', '\n', '\t', etc.
-    TOKEN_INT,
-    TOKEN_FLOAT,
-    TOKEN_STRING,
-    TOKEN_CHAR,       // tipo char
-    TOKEN_VOID,
-    TOKEN_LONG,
-    TOKEN_LONGLONG,
-    TOKEN_DOUBLE,
-    TOKEN_IF,
-    TOKEN_ELSE,
-    TOKEN_THEN,
-    TOKEN_FOR,
-    TOKEN_WHILE,
-    TOKEN_RETURN,
-    TOKEN_STRUCT,
-    TOKEN_NAMESPACE,
+    TOKEN_CHAR_LIT,
+
+    // Tipos primitivos
+    TOKEN_INT,          // i32 ou int
+    TOKEN_FLOAT,        // f32 ou float
+    TOKEN_STRING,       // str
+    TOKEN_CHAR,         // char
+    TOKEN_VOID,         // void
+    TOKEN_LONG,         // i64 ou long
+    TOKEN_LONGLONG,     // (compatibilidade interna)
+    TOKEN_DOUBLE,       // f64 ou double
+    TOKEN_BOOL,         // bool
+    TOKEN_TRUE,         // true
+    TOKEN_FALSE,        // false
+
+    // Palavras-chave
+    TOKEN_LET,          // let
+    TOKEN_MUT,          // mut
+    TOKEN_FN,           // fn
+    TOKEN_IMPL,         // impl
+    TOKEN_SELF,         // self (receiver de método)
+    TOKEN_RETURN,       // return
+    TOKEN_IF,           // if
+    TOKEN_ELSE,         // else
+    TOKEN_FOR,          // for
+    TOKEN_WHILE,        // while
+    TOKEN_IN,           // in (reservado para futuros iteradores)
+    TOKEN_STRUCT,       // struct
+    TOKEN_NAMESPACE,    // namespace
+    TOKEN_INCLUDE,      // include
+    TOKEN_ASM,          // asm
+    TOKEN_IR,           // ir
+    TOKEN_AS,           // as  (cast: expr as Type)
+
+    // Identificador genérico
     TOKEN_IDENT,
+
+    // Operadores aritméticos
     TOKEN_PLUS,
     TOKEN_MINUS,
     TOKEN_STAR,
     TOKEN_SLASH,
     TOKEN_PERCENT,
-    TOKEN_ASSIGN,
-    TOKEN_EQ,
-    TOKEN_NEQ,
-    TOKEN_LT,
-    TOKEN_GT,
-    TOKEN_LEQ,
-    TOKEN_GEQ,
-    TOKEN_LPAREN,
-    TOKEN_RPAREN,
-    TOKEN_LBRACE,
-    TOKEN_RBRACE,
-    TOKEN_LBRACKET,
-    TOKEN_RBRACKET,
-    TOKEN_COMMA,
-    TOKEN_SEMI,
-    TOKEN_COLON,
+
+    // Operadores de comparação
+    TOKEN_EQ,           // ==
+    TOKEN_NEQ,          // !=
+    TOKEN_LT,           // <
+    TOKEN_GT,           // >
+    TOKEN_LEQ,          // <=
+    TOKEN_GEQ,          // >=
+
+    // Operadores de atribuição
+    TOKEN_ASSIGN,       // =
+
+    // Pontuação
+    TOKEN_LPAREN,       // (
+    TOKEN_RPAREN,       // )
+    TOKEN_LBRACE,       // {
+    TOKEN_RBRACE,       // }
+    TOKEN_LBRACKET,     // [
+    TOKEN_RBRACKET,     // ]
+    TOKEN_COMMA,        // ,
+    TOKEN_SEMI,         // ;
+    TOKEN_COLON,        // :
     TOKEN_COLONCOLON,   // ::
-    TOKEN_DOT,
-    TOKEN_AND,
-    TOKEN_OR,
-    TOKEN_NOT,
+    TOKEN_DOT,          // .
+    TOKEN_ARROW,        // -> (tipo de retorno de função)
+    TOKEN_AMPERSAND,    // & (referência / &self)
+
+    // Operadores lógicos
+    TOKEN_AND,          // &&
+    TOKEN_OR,           // ||
+    TOKEN_NOT,          // !
+
+    // Pré-processador
     TOKEN_HASH,
-    TOKEN_INCLUDE,
     TOKEN_HEADER_PATH,
-    TOKEN_ASM,
-    TOKEN_IR,
-    TOKEN_ELLIPSIS,   // ... para funções variádicas
+
+    // Variádico
+    TOKEN_ELLIPSIS,     // ...
+
+    // Controle
     TOKEN_EOF,
-    TOKEN_UNKNOWN
+    TOKEN_UNKNOWN,
+
+    // ─── Legacy (mantidos para compatibilidade interna) ───────────────────────
+    TOKEN_THEN          // nunca mais emitido, mantido para não quebrar switches
 };
 
 struct Token {
     TokenType type;
     std::string value;
     int line;
-    int col;   // ← coluna onde o token começa
+    int col;
 };
 
-// Estado completo do lexer — usado para salvar/restaurar ao parsear .nh
 struct LexerState {
     std::string source;
     size_t pos;
@@ -79,4 +115,4 @@ LexerState saveLexerState();
 void restoreLexerState(const LexerState& s);
 Token nextToken();
 Token peekToken();
-std::string getSourceLine(int lineNumber); // ← retorna a linha do fonte para exibir no erro
+std::string getSourceLine(int lineNumber);
