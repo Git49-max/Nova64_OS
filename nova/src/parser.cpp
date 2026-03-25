@@ -309,11 +309,32 @@ static NodePtr parsePrimary() {
         int tl = current.line, tc = current.col;
         current = nextToken();
         std::string op = "&";
+        bool isMutBorrow = false;
         if (current.type == TOKEN_MUT) {
             op = "&mut";
+            isMutBorrow = true;
             current = nextToken();
         }
-        return std::make_unique<UnaryOpNode>(op, parsePrimary(), tl, tc);
+        auto operand = parsePrimary();
+        if (isMutBorrow) {
+            std::string rootVar;
+            if (auto* vn = dynamic_cast<VarNode*>(operand.get())) rootVar = vn->name;
+            else if (auto* an = dynamic_cast<ArrayAccessNode*>(operand.get())) rootVar = an->name;
+            else if (auto* fan = dynamic_cast<FieldAccessNode*>(operand.get())) {
+                size_t dot = fan->varName.find('.');
+                rootVar = (dot == std::string::npos) ? fan->varName : fan->varName.substr(0, dot);
+            } else if (auto* dn = dynamic_cast<DerefNode*>(operand.get())) {
+                if (auto* vn = dynamic_cast<VarNode*>(dn->operand.get())) rootVar = vn->name;
+            }
+
+            if (!rootVar.empty() && immutableVars.count(rootVar) && !mutableReferences.count(rootVar)) {
+                reportError(sourceFile, tl, tc,
+                            "cannot borrow immutable variable '" + rootVar + "' as mutable",
+                            getSourceLine(tl), (int)op.size(),
+                            "declare with 'let mut' to allow mutable references");
+            }
+        }
+        return std::make_unique<UnaryOpNode>(op, std::move(operand), tl, tc);
     }
     // ──────────────────────────────────────────────
 
