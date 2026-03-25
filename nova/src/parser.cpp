@@ -1,6 +1,6 @@
-#include "../include/ast.h"
+#include "ast.h"
 #include <cstdlib>
-#include "../include/lexer.h"
+#include "lexer.h"
 #include "../include/error.h"
 #include <iostream>
 #include <fstream>
@@ -16,11 +16,18 @@ static std::string sourceFile;
 static std::set<std::string> includedHeaders;
 static std::map<std::string, int> arraySizes;
 
-// Rastreia nomes declarados no escopo atual para "did you mean?"
+// Rastreia nomes declarados (para "did you mean?")
 static std::set<std::string> declaredFunctionNames;
 static std::set<std::string> declaredVarNames;
 
-// ── Levenshtein para sugestões "did you mean?" ────────────────────────────────
+// Conjunto de structs declarados — usado para detectar mutabilidade
+static std::set<std::string> declaredStructNames;
+
+// ── Mutabilidade em escopo: variáveis imutáveis ────────────────────────────────
+// Registro de quais variáveis locais são imutáveis
+static std::set<std::string> immutableVars;
+
+// ── Levenshtein ───────────────────────────────────────────────────────────────
 static int editDistance(const std::string& a, const std::string& b) {
     int m = (int)a.size(), n = (int)b.size();
     std::vector<std::vector<int>> dp(m+1, std::vector<int>(n+1, 0));
@@ -37,7 +44,7 @@ static int editDistance(const std::string& a, const std::string& b) {
 static std::string didYouMean(const std::string& name,
                                const std::set<std::string>& candidates) {
     std::string best;
-    int bestDist = 3; // threshold: máximo 3 edições
+    int bestDist = 3;
     for (auto& c : candidates) {
         int d = editDistance(name, c);
         if (d < bestDist) { bestDist = d; best = c; }
@@ -46,6 +53,7 @@ static std::string didYouMean(const std::string& name,
     return "";
 }
 
+// ── Nome legível de token ─────────────────────────────────────────────────────
 static std::string tokenTypeName(TokenType t) {
     switch (t) {
         case TOKEN_SEMI:      return "';'";
@@ -57,21 +65,28 @@ static std::string tokenTypeName(TokenType t) {
         case TOKEN_RBRACKET:  return "']'";
         case TOKEN_ASSIGN:    return "'='";
         case TOKEN_COMMA:     return "','";
+        case TOKEN_COLON:     return "':'";
+        case TOKEN_ARROW:     return "'->'";
+        case TOKEN_AS:        return "'as'";
         case TOKEN_IDENT:     return "identifier";
         case TOKEN_INT_LIT:   return "integer literal";
         case TOKEN_FLOAT_LIT: return "float literal";
         case TOKEN_STRING_LIT:return "string literal";
-        case TOKEN_CHAR:      return "'char'";
         case TOKEN_CHAR_LIT:  return "char literal";
-        case TOKEN_INT:       return "'int'";
-        case TOKEN_FLOAT:     return "'float'";
-        case TOKEN_STRING:    return "'string'";
+        case TOKEN_INT:       return "'i32'";
+        case TOKEN_FLOAT:     return "'f32'";
+        case TOKEN_STRING:    return "'str'";
+        case TOKEN_CHAR:      return "'char'";
         case TOKEN_VOID:      return "'void'";
-        case TOKEN_LONG:      return "'long'";
-        case TOKEN_DOUBLE:    return "'double'";
+        case TOKEN_LONG:      return "'i64'";
+        case TOKEN_DOUBLE:    return "'f64'";
+        case TOKEN_BOOL:      return "'bool'";
+        case TOKEN_FN:        return "'fn'";
+        case TOKEN_LET:       return "'let'";
+        case TOKEN_MUT:       return "'mut'";
+        case TOKEN_IMPL:      return "'impl'";
         case TOKEN_IF:        return "'if'";
         case TOKEN_ELSE:      return "'else'";
-        case TOKEN_THEN:      return "'then'";
         case TOKEN_WHILE:     return "'while'";
         case TOKEN_FOR:       return "'for'";
         case TOKEN_RETURN:    return "'return'";
@@ -81,6 +96,7 @@ static std::string tokenTypeName(TokenType t) {
     }
 }
 
+// ── eat: consome token esperado ou emite erro detalhado ───────────────────────
 static Token eat(TokenType expected) {
     if (current.type != expected) {
         std::string ln = getSourceLine(current.line);
@@ -91,16 +107,16 @@ static Token eat(TokenType expected) {
                         "missing ';' at end of statement",
                         ln, tlen,
                         "add ';' before '" + current.value + "'");
-        } else if (expected == TOKEN_THEN) {
+        } else if (expected == TOKEN_COLON) {
             reportError(sourceFile, current.line, current.col,
-                        "expected 'then' after if condition, but found '" + current.value + "'",
+                        "expected ':' after variable name in declaration",
                         ln, tlen,
-                        "Nova syntax: if (condition) then { ... }");
+                        "syntax: let name: Type = value;");
         } else if (expected == TOKEN_LBRACE) {
             reportError(sourceFile, current.line, current.col,
                         "expected '{' to open block, but found '" + current.value + "'",
                         ln, tlen,
-                        "every if/for/while/function body must be wrapped in { }");
+                        "every if/for/while/fn body must be wrapped in { }");
         } else if (expected == TOKEN_RBRACE) {
             reportError(sourceFile, current.line, current.col,
                         "expected '}' to close block, but found '" + current.value + "'",
@@ -119,15 +135,27 @@ static Token eat(TokenType expected) {
             reportError(sourceFile, current.line, current.col,
                         "expected '=' in assignment, but found '" + current.value + "'",
                         ln, tlen);
+        } else if (expected == TOKEN_ARROW) {
+            reportError(sourceFile, current.line, current.col,
+                        "expected '->' for return type annotation, but found '" + current.value + "'",
+                        ln, tlen,
+                        "syntax: fn name(params) -> RetType { ... }");
         } else if (expected == TOKEN_IDENT) {
-            if (current.type == TOKEN_INT || current.type == TOKEN_FLOAT ||
-                current.type == TOKEN_STRING || current.type == TOKEN_VOID ||
-                current.type == TOKEN_DOUBLE || current.type == TOKEN_LONG ||
-                current.type == TOKEN_CHAR) {
+            if (current.type == TOKEN_INT    || current.type == TOKEN_FLOAT  ||
+                current.type == TOKEN_STRING || current.type == TOKEN_VOID   ||
+                current.type == TOKEN_DOUBLE || current.type == TOKEN_LONG   ||
+                current.type == TOKEN_CHAR   || current.type == TOKEN_BOOL) {
+                reportError(sourceFile, current.line, current.col,
+                            "'" + current.value + "' is a reserved type keyword and cannot be used as a name",
+                            ln, tlen,
+                            "choose a different name for your variable or function");
+            } else if (current.type == TOKEN_FN   || current.type == TOKEN_LET ||
+                       current.type == TOKEN_MUT   || current.type == TOKEN_IMPL||
+                       current.type == TOKEN_STRUCT) {
                 reportError(sourceFile, current.line, current.col,
                             "'" + current.value + "' is a reserved keyword and cannot be used as a name",
                             ln, tlen,
-                            "choose a different name for your variable or function");
+                            "choose a different name");
             } else {
                 reportError(sourceFile, current.line, current.col,
                             "expected a name (identifier), but found '" + current.value + "'",
@@ -150,29 +178,46 @@ static Token eat(TokenType expected) {
     return t;
 }
 
-// Quando retorna DataType::Custom, o caller deve ler lastCustomTypeName para saber o nome do struct.
+// ── Verificação de mutabilidade ───────────────────────────────────────────────
+static void checkMutable(const std::string& varName, int line, int col) {
+    if (immutableVars.count(varName)) {
+        std::string ln = getSourceLine(line);
+        reportError(sourceFile, line, col,
+                    "cannot assign to immutable variable '" + varName + "'",
+                    ln, (int)varName.size(),
+                    "declare with 'let mut " + varName + ": ...' to allow mutation");
+    }
+}
+
+// ── Tipo de dado: nome: Type ──────────────────────────────────────────────────
+// Quando retorna DataType::Custom, o caller lê lastCustomTypeName.
 static std::string lastCustomTypeName;
 
 static DataType parseDataType() {
+    // &T ou &mut T — tipo de referência/ponteiro
+    // Internamente representado como i64 (endereço bruto), igual ao que &var produz
+    if (current.type == TOKEN_AMPERSAND) {
+        current = nextToken();
+        if (current.type == TOKEN_MUT) current = nextToken(); // consome 'mut' opcional
+        parseDataType(); // consome o tipo base — descartamos, tudo vira i64
+        return DataType::Long;
+    }
     if (current.type == TOKEN_INT)    { current = nextToken(); return DataType::Int; }
     if (current.type == TOKEN_FLOAT)  { current = nextToken(); return DataType::Float; }
     if (current.type == TOKEN_STRING) { current = nextToken(); return DataType::String; }
     if (current.type == TOKEN_CHAR)   { current = nextToken(); return DataType::Char; }
     if (current.type == TOKEN_VOID)   { current = nextToken(); return DataType::Void; }
     if (current.type == TOKEN_DOUBLE) { current = nextToken(); return DataType::Double; }
+    if (current.type == TOKEN_BOOL)   { current = nextToken(); return DataType::Bool; }
     if (current.type == TOKEN_LONG) {
         current = nextToken();
         if (current.type == TOKEN_LONG) { current = nextToken(); return DataType::LongLong; }
         return DataType::Long;
     }
-    // Tipo struct: IDENT que começa com maiúscula ou é um nome de struct declarado
-    // O parser não tem acesso ao registro de structs em tempo de parse, então
-    // aceita qualquer IDENT como possível tipo struct — o codegen valida.
-    // Também aceita namespace::Struct como tipo qualificado.
+    // Tipo struct ou qualificado: Point  |  geo::Point
     if (current.type == TOKEN_IDENT) {
         lastCustomTypeName = current.value;
         current = nextToken();
-        // Suporte a tipos qualificados: namespace::Struct
         if (current.type == TOKEN_COLONCOLON) {
             current = nextToken();
             std::string structName = eat(TOKEN_IDENT).value;
@@ -180,25 +225,28 @@ static DataType parseDataType() {
         }
         return DataType::Custom;
     }
+
+    // Mensagem de erro rica
     std::string ln = getSourceLine(current.line);
     static const std::set<std::string> types =
-        {"int","float","double","long","char","string","void"};
+        {"i32","i64","f32","f64","str","bool","char","void","int","float","double","long","string"};
     std::string hint = didYouMean(current.value, types);
     if (hint.empty())
-        hint = "valid types: int, float, double, long, long long, char, string, void, or a struct name";
+        hint = "valid types: i32, i64, f32, f64, str, char, bool, void, or a struct name";
     reportError(sourceFile, current.line, current.col,
                 "'" + current.value + "' is not a valid type",
                 ln, std::max(1,(int)current.value.size()), hint);
     return DataType::Int;
 }
 
+// ── Conversão segura ──────────────────────────────────────────────────────────
 static long long safeStoll(const std::string& val, int ln, int co) {
     try { return std::stoll(val); }
     catch (const std::out_of_range&) {
         reportError(sourceFile, ln, co,
                     "integer literal '" + val + "' overflows — value is too large",
                     getSourceLine(ln), (int)val.size(),
-                    "use 'long' type for large values — max int is 2147483647");
+                    "use 'i64' for large values — max i32 is 2147483647");
     } catch (const std::invalid_argument&) {
         reportError(sourceFile, ln, co,
                     "malformed integer literal '" + val + "'",
@@ -222,17 +270,42 @@ static int safeStoi(const std::string& val, int ln, int co) {
     return 0;
 }
 
+// ── Forward declarations ──────────────────────────────────────────────────────
 static NodePtr parseStatement();
 static std::vector<NodePtr> parseBlock();
 static NodePtr parseExpr();
 static NodePtr parseAddSub();
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// PARSING DE EXPRESSÕES
+// ═══════════════════════════════════════════════════════════════════════════════
+
 static NodePtr parsePrimary() {
+    if (current.type == TOKEN_AMPERSAND) {
+        int tl = current.line, tc = current.col;
+        current = nextToken();
+        std::string op = "&";
+        if (current.type == TOKEN_MUT) {
+            op = "&mut";
+            current = nextToken();
+        }
+        return std::make_unique<UnaryOpNode>(op, parsePrimary(), tl, tc);
+    }
+    // ──────────────────────────────────────────────
+
+    // Operador unário ! (este já existe no seu código)
     if (current.type == TOKEN_NOT) {
         int tl = current.line, tc = current.col;
         current = nextToken();
         return std::make_unique<UnaryOpNode>("!", parsePrimary(), tl, tc);
     }
+    if (current.type == TOKEN_STAR) {
+        int l = current.line, c = current.col;
+        current = nextToken(); // Consome o '*'
+        // Chama parseUnaryExpression de novo para permitir algo como **ptr
+        return std::make_unique<DerefNode>(parsePrimary(), DataType::Int, l, c);
+    }
+    // Negação unária -
     if (current.type == TOKEN_MINUS) {
         int tl = current.line, tc = current.col;
         current = nextToken();
@@ -240,6 +313,16 @@ static NodePtr parsePrimary() {
         return std::make_unique<BinaryOpNode>("-",
             std::make_unique<IntLitNode>(0), std::move(operand), tl, tc);
     }
+    // true / false
+    if (current.type == TOKEN_TRUE) {
+        current = nextToken();
+        return std::make_unique<BoolLitNode>(true);
+    }
+    if (current.type == TOKEN_FALSE) {
+        current = nextToken();
+        return std::make_unique<BoolLitNode>(false);
+    }
+    // Inteiro literal
     if (current.type == TOKEN_INT_LIT) {
         int tl = current.line, tc = current.col;
         long long v = safeStoll(current.value, tl, tc);
@@ -261,45 +344,61 @@ static NodePtr parsePrimary() {
         current = nextToken();
         return std::make_unique<CharLitNode>(v);
     }
-    if (current.type == TOKEN_IDENT) {
+
+    // Agrupamento: (expr)
+    if (current.type == TOKEN_LPAREN) {
+        current = nextToken();
+        auto e = parseExpr();
+        eat(TOKEN_RPAREN);
+        return e;
+    }
+
+    // Identificador: var, func(), arr[i], obj.field, ns::func()
+    // TOKEN_SELF: 'self' dentro de métodos impl — tratado como identificador normal
+    if (current.type == TOKEN_IDENT || current.type == TOKEN_SELF) {
         std::string name = current.value;
         int tokLine = current.line, tokCol = current.col;
         current = nextToken();
 
+        // Namespace qualificado: ns::member
         if (current.type == TOKEN_COLONCOLON) {
             current = nextToken();
-            std::string funcName = eat(TOKEN_IDENT).value;
-            std::string qualName = name + "::" + funcName;
-            eat(TOKEN_LPAREN);
-            std::vector<NodePtr> args;
-            while (current.type != TOKEN_RPAREN) {
-                if (current.type == TOKEN_EOF) {
-                    reportError(sourceFile, tokLine, tokCol,
-                        "unterminated argument list for '" + qualName + "()'",
-                        getSourceLine(tokLine), (int)qualName.size(),
-                        "add a closing ')'");
+            std::string memberName = eat(TOKEN_IDENT).value;
+            std::string qualName = name + "::" + memberName;
+            if (current.type == TOKEN_LPAREN) {
+                current = nextToken();
+                std::vector<NodePtr> args;
+                while (current.type != TOKEN_RPAREN) {
+                    if (current.type == TOKEN_EOF)
+                        reportError(sourceFile, tokLine, tokCol,
+                            "unterminated argument list for '" + qualName + "()'",
+                            getSourceLine(tokLine), (int)qualName.size(), "add a closing ')'");
+                    args.push_back(parseExpr());
+                    if (current.type == TOKEN_COMMA) current = nextToken();
                 }
-                args.push_back(parseExpr());
-                if (current.type == TOKEN_COMMA) current = nextToken();
+                eat(TOKEN_RPAREN);
+                return std::make_unique<CallNode>(qualName, std::move(args), tokLine, tokCol);
             }
-            eat(TOKEN_RPAREN);
-            return std::make_unique<CallNode>(qualName, std::move(args), tokLine, tokCol);
+            return std::make_unique<VarNode>(qualName, tokLine, tokCol);
         }
+
+        // Chamada de função: foo(...)
         if (current.type == TOKEN_LPAREN) {
             current = nextToken();
             std::vector<NodePtr> args;
             while (current.type != TOKEN_RPAREN) {
-                if (current.type == TOKEN_EOF) {
+                if (current.type == TOKEN_EOF)
                     reportError(sourceFile, tokLine, tokCol,
                         "unterminated argument list for '" + name + "()'",
                         getSourceLine(tokLine), (int)name.size(), "add a closing ')'");
-                }
                 args.push_back(parseExpr());
                 if (current.type == TOKEN_COMMA) current = nextToken();
             }
             eat(TOKEN_RPAREN);
             return std::make_unique<CallNode>(name, std::move(args), tokLine, tokCol);
         }
+
+        // Índice de array: arr[i]
         if (current.type == TOKEN_LBRACKET) {
             current = nextToken();
             int idxLine = current.line, idxCol = current.col;
@@ -309,104 +408,73 @@ static NodePtr parsePrimary() {
                 auto it = arraySizes.find(name);
                 if (it != arraySizes.end()) {
                     int idx = lit->value;
-                    if (idx < 0) {
+                    if (idx < 0)
                         reportError(sourceFile, idxLine, idxCol,
-                            "negative array index " + std::to_string(idx) +
-                            " for '" + name + "'",
-                            getSourceLine(idxLine),
-                            (int)std::to_string(idx).size(),
+                            "negative array index " + std::to_string(idx) + " for '" + name + "'",
+                            getSourceLine(idxLine), (int)std::to_string(idx).size(),
                             "array indices start at 0");
-                    }
-                    if (idx >= it->second) {
+                    if (idx >= it->second)
                         reportError(sourceFile, idxLine, idxCol,
-                            "index " + std::to_string(idx) +
-                            " is out of bounds for array '" + name +
-                            "' (size " + std::to_string(it->second) + ")",
-                            getSourceLine(idxLine),
-                            (int)std::to_string(idx).size(),
+                            "index " + std::to_string(idx) + " is out of bounds for array '"
+                            + name + "' (size " + std::to_string(it->second) + ")",
+                            getSourceLine(idxLine), (int)std::to_string(idx).size(),
                             "valid indices are 0 to " + std::to_string(it->second - 1));
-                    }
                 }
             }
             return std::make_unique<ArrayAccessNode>(name, std::move(index), tokLine, tokCol);
         }
+
+        // Acesso de campo / chamada de método: obj.field  obj.method(...)
         if (current.type == TOKEN_DOT) {
             current = nextToken();
-            std::string member = eat(TOKEN_IDENT).value;
+            std::string field = eat(TOKEN_IDENT).value;
+            // Acesso encadeado: a.b.c
+            std::string composedName = name;
+            std::string composedField = field;
+            while (current.type == TOKEN_DOT) {
+                composedName = composedName + "." + composedField;
+                current = nextToken();
+                composedField = eat(TOKEN_IDENT).value;
+            }
+            // Chamada de método: obj.method(...)
             if (current.type == TOKEN_LPAREN) {
                 current = nextToken();
                 std::vector<NodePtr> args;
                 while (current.type != TOKEN_RPAREN) {
-                    if (current.type == TOKEN_EOF) {
+                    if (current.type == TOKEN_EOF)
                         reportError(sourceFile, tokLine, tokCol,
-                            "unterminated argument list for '" + name + "." + member + "()'",
-                            getSourceLine(tokLine), (int)member.size(), "add a closing ')'");
-                    }
+                            "unterminated argument list for '" + composedName + "." + composedField + "()'",
+                            getSourceLine(tokLine), (int)composedField.size(), "add ')'");
                     args.push_back(parseExpr());
                     if (current.type == TOKEN_COMMA) current = nextToken();
                 }
                 eat(TOKEN_RPAREN);
-                return std::make_unique<MethodCallNode>(name, member, std::move(args), tokLine, tokCol);
+                return std::make_unique<MethodCallNode>(composedName, composedField,
+                                                        std::move(args), tokLine, tokCol);
             }
-            return std::make_unique<FieldAccessNode>(name, member, tokLine, tokCol);
+            return std::make_unique<FieldAccessNode>(composedName, composedField, tokLine, tokCol);
         }
+
+        // Variável simples
         return std::make_unique<VarNode>(name, tokLine, tokCol);
     }
-    if (current.type == TOKEN_LPAREN) {
-        int castLine = current.line, castCol = current.col;
-        Token next = peekToken();
-        bool isCast = (next.type == TOKEN_INT   || next.type == TOKEN_FLOAT ||
-                       next.type == TOKEN_DOUBLE || next.type == TOKEN_LONG  ||
-                       next.type == TOKEN_CHAR   || next.type == TOKEN_STRING);
-        if (isCast) {
-            current = nextToken();
-            DataType targetType = parseDataType();
-            eat(TOKEN_RPAREN);
-            return std::make_unique<CastNode>(targetType, parsePrimary(), castLine, castCol);
-        }
-        current = nextToken();
-        auto expr = parseExpr();
-        eat(TOKEN_RPAREN);
-        return expr;
+
+    // Erro: expressão inválida
+    {
+        std::string ln = getSourceLine(current.line);
+        int tl = current.line, tc = current.col;
+        std::string hint = didYouMean(current.value, declaredVarNames);
+        if (hint.empty()) hint = didYouMean(current.value, declaredFunctionNames);
+        if (hint.empty()) hint = "expected a value: literal, variable name, or function call";
+        reportError(sourceFile, tl, tc,
+                    "unexpected '" + current.value + "' in expression",
+                    ln, std::max(1,(int)current.value.size()), hint);
     }
-
-    // ── Erros contextuais de expressão inválida ────────────────────────────
-    std::string ln = getSourceLine(current.line);
-    int tl = current.line, tc = current.col;
-    int tlen = std::max(1, (int)current.value.size());
-
-    if (current.type == TOKEN_EOF)
-        reportError(sourceFile, tl, tc,
-                    "unexpected end of file — expression is incomplete",
-                    ln, 1, "check for a missing value or closing bracket above");
-    if (current.type == TOKEN_SEMI)
-        reportError(sourceFile, tl, tc,
-                    "unexpected ';' — expected an expression here",
-                    ln, 1, "remove the extra ';' or provide a value");
-    if (current.type == TOKEN_RBRACE)
-        reportError(sourceFile, tl, tc,
-                    "unexpected '}' — expected an expression here",
-                    ln, 1, "check for a missing value or an extra '}'");
-    if (current.type == TOKEN_ASSIGN)
-        reportError(sourceFile, tl, tc,
-                    "unexpected '=' — did you mean '==' for comparison?",
-                    ln, 1, "use '==' to compare values; '=' is only for assignment");
-    if (current.type == TOKEN_INT    || current.type == TOKEN_FLOAT ||
-        current.type == TOKEN_STRING || current.type == TOKEN_VOID  ||
-        current.type == TOKEN_DOUBLE || current.type == TOKEN_LONG  ||
-        current.type == TOKEN_CHAR)
-        reportError(sourceFile, tl, tc,
-                    "unexpected type keyword '" + current.value + "' inside expression",
-                    ln, tlen,
-                    "variable declarations must be at the start of a block, not inside expressions");
-
-    reportError(sourceFile, tl, tc,
-                "unexpected '" + current.value + "' — expected a value, variable name, or '('",
-                ln, tlen);
     return nullptr;
 }
 
-static NodePtr parseTerm() {
+// ── Multiplicação / divisão / módulo ─────────────────────────────────────────
+static NodePtr parseMulDiv() {
     auto left = parsePrimary();
     while (current.type == TOKEN_STAR  ||
            current.type == TOKEN_SLASH ||
@@ -419,24 +487,53 @@ static NodePtr parseTerm() {
     return left;
 }
 
-static NodePtr parseAddSub() {
-    auto left = parseTerm();
-    while (current.type == TOKEN_PLUS || current.type == TOKEN_MINUS) {
-        std::string op = current.value;
+// ── Cast: expr as Type ────────────────────────────────────────────────────────
+// Tem precedência maior que aritmética (4 + x as f64 == 4 + (x as f64))
+static NodePtr parseCast() {
+    auto left = parseMulDiv();
+    while (current.type == TOKEN_AS) {
         int tl = current.line, tc = current.col;
-        current = nextToken();
-        left = std::make_unique<BinaryOpNode>(op, std::move(left), parseTerm(), tl, tc);
+        current = nextToken(); // consome 'as'
+        // Deve vir um tipo primitivo — structs não são castáveis
+        DataType targetType;
+        if      (current.type == TOKEN_INT)    { targetType = DataType::Int;    current = nextToken(); }
+        else if (current.type == TOKEN_LONG)   { targetType = DataType::Long;   current = nextToken(); }
+        else if (current.type == TOKEN_FLOAT)  { targetType = DataType::Float;  current = nextToken(); }
+        else if (current.type == TOKEN_DOUBLE) { targetType = DataType::Double; current = nextToken(); }
+        else if (current.type == TOKEN_CHAR)   { targetType = DataType::Char;   current = nextToken(); }
+        else if (current.type == TOKEN_BOOL)   { targetType = DataType::Int;    current = nextToken(); } // bool → i32
+        else {
+            std::string ln = getSourceLine(current.line);
+            reportError(sourceFile, current.line, current.col,
+                "'as' must be followed by a primitive type",
+                ln, std::max(1,(int)current.value.size()),
+                "valid cast targets: i32, i64, f32, f64, char\n"
+                "    example: x as f64,  value as i32");
+            return left;
+        }
+        left = std::make_unique<CastNode>(targetType, std::move(left), tl, tc);
     }
     return left;
 }
 
-static NodePtr parseExpr();
+// ── Adição / subtração ────────────────────────────────────────────────────────
+static NodePtr parseAddSub() {
+    auto left = parseCast();
+    while (current.type == TOKEN_PLUS || current.type == TOKEN_MINUS) {
+        std::string op = current.value;
+        int tl = current.line, tc = current.col;
+        current = nextToken();
+        left = std::make_unique<BinaryOpNode>(op, std::move(left), parseCast(), tl, tc);
+    }
+    return left;
+}
 
+// ── Comparação ────────────────────────────────────────────────────────────────
 static NodePtr parseComparison() {
     auto left = parseAddSub();
-    while (current.type == TOKEN_EQ  || current.type == TOKEN_NEQ ||
-           current.type == TOKEN_LT  || current.type == TOKEN_GT  ||
-           current.type == TOKEN_LEQ || current.type == TOKEN_GEQ) {
+    while (current.type == TOKEN_LT  || current.type == TOKEN_GT  ||
+           current.type == TOKEN_LEQ || current.type == TOKEN_GEQ ||
+           current.type == TOKEN_EQ  || current.type == TOKEN_NEQ) {
         std::string op = current.value;
         int tl = current.line, tc = current.col;
         current = nextToken();
@@ -445,25 +542,21 @@ static NodePtr parseComparison() {
     return left;
 }
 
-static NodePtr parseAnd() {
+// ── Lógica &&  || ─────────────────────────────────────────────────────────────
+static NodePtr parseExpr() {
     auto left = parseComparison();
-    while (current.type == TOKEN_AND) {
+    while (current.type == TOKEN_AND || current.type == TOKEN_OR) {
+        std::string op = current.value;
         int tl = current.line, tc = current.col;
         current = nextToken();
-        left = std::make_unique<BinaryOpNode>("&&", std::move(left), parseComparison(), tl, tc);
+        left = std::make_unique<BinaryOpNode>(op, std::move(left), parseComparison(), tl, tc);
     }
     return left;
 }
 
-static NodePtr parseExpr() {
-    auto left = parseAnd();
-    while (current.type == TOKEN_OR) {
-        int tl = current.line, tc = current.col;
-        current = nextToken();
-        left = std::make_unique<BinaryOpNode>("||", std::move(left), parseAnd(), tl, tc);
-    }
-    return left;
-}
+// ═══════════════════════════════════════════════════════════════════════════════
+// PARSING DE STATEMENTS
+// ═══════════════════════════════════════════════════════════════════════════════
 
 static std::vector<NodePtr> parseBlock() {
     eat(TOKEN_LBRACE);
@@ -472,472 +565,241 @@ static std::vector<NodePtr> parseBlock() {
         stmts.push_back(parseStatement());
     if (current.type == TOKEN_EOF)
         reportError(sourceFile, current.line, current.col,
-                    "reached end of file without closing '}'",
+                    "unexpected end of file — missing '}' to close block",
                     getSourceLine(current.line), 1,
                     "add '}' to close the open block");
     eat(TOKEN_RBRACE);
     return stmts;
 }
 
-static NodePtr parseStatement() {
-    if (current.type == TOKEN_STRUCT)
-        current = nextToken(); // 'struct' opcional na declaração local
-
-    if (current.type == TOKEN_IDENT) {
-        int tokLine = current.line, tokCol = current.col;
-        std::string firstName = current.value;
+// ── `let [mut] name: Type [= expr];` ─────────────────────────────────────────
+static NodePtr parseLetDecl(int tokLine, int tokCol) {
+    bool isMut = false;
+    if (current.type == TOKEN_MUT) {
+        isMut = true;
         current = nextToken();
+    }
 
-        // namespace::Something — chamada de função OU declaração de variável/array de struct
-        if (current.type == TOKEN_COLONCOLON) {
+    std::string name = eat(TOKEN_IDENT).value;
+    eat(TOKEN_COLON);
+    DataType type = parseDataType();
+    std::string customTypeName = (type == DataType::Custom) ? lastCustomTypeName : "";
+
+    // Verificação de array: let [mut] arr: [i32; N]
+    // Sintaxe alternativa suportada: `let arr: TypeName[N]` (usando colchete direto após o tipo)
+    if (current.type == TOKEN_LBRACKET) {
+        current = nextToken();
+        if (current.type != TOKEN_INT_LIT)
+            reportError(sourceFile, current.line, current.col,
+                "array size must be a constant integer",
+                getSourceLine(current.line), std::max(1,(int)current.value.size()),
+                "example: let " + name + ": i32[10];");
+        int sizeLine = current.line, sizeCol = current.col;
+        int size = safeStoi(eat(TOKEN_INT_LIT).value, sizeLine, sizeCol);
+        if (size <= 0)
+            reportError(sourceFile, sizeLine, sizeCol,
+                "array size must be positive", getSourceLine(sizeLine), 1);
+        eat(TOKEN_RBRACKET);
+        std::vector<NodePtr> init;
+        if (current.type == TOKEN_ASSIGN) {
             current = nextToken();
-            std::string secondName = eat(TOKEN_IDENT).value;
-            std::string qualName = firstName + "::" + secondName;
-
-            // geo::Point varName  /  geo::Point arr[5]  /  geo::Point varName = ...
-            if (current.type == TOKEN_IDENT) {
-                std::string varName = current.value;
-                current = nextToken();
-                // Array de struct: geo::Point arr[5];
-                if (current.type == TOKEN_LBRACKET) {
-                    current = nextToken();
-                    if (current.type != TOKEN_INT_LIT)
-                        reportError(sourceFile, current.line, current.col,
-                            "array size must be a constant integer",
-                            getSourceLine(current.line), std::max(1,(int)current.value.size()),
-                            "example: " + qualName + " " + varName + "[10];");
-                    int sizeLine = current.line, sizeCol = current.col;
-                    int size = safeStoi(eat(TOKEN_INT_LIT).value, sizeLine, sizeCol);
-                    if (size <= 0)
-                        reportError(sourceFile, sizeLine, sizeCol,
-                            "array size must be positive", getSourceLine(sizeLine), 1);
-                    eat(TOKEN_RBRACKET);
-                    eat(TOKEN_SEMI);
-                    arraySizes[varName] = size;
-                    return std::make_unique<ArrayDeclNode>(DataType::Custom, qualName, varName, size,
-                                                           std::vector<NodePtr>{}, tokLine, tokCol);
-                }
-                // geo::Point a = func(...);  ou  geo::Point a = outraVar;
-                if (current.type == TOKEN_ASSIGN) {
-                    current = nextToken();
-                    if (current.type == TOKEN_IDENT) {
-                        std::string callName = current.value;
-                        current = nextToken();
-                        if (current.type == TOKEN_LPAREN) {
-                            current = nextToken();
-                            std::vector<NodePtr> args;
-                            while (current.type != TOKEN_RPAREN) {
-                                if (current.type == TOKEN_EOF)
-                                    reportError(sourceFile, tokLine, tokCol,
-                                        "unterminated argument list for '" + callName + "()'",
-                                        getSourceLine(tokLine), (int)callName.size(), "add ')'");
-                                args.push_back(parseExpr());
-                                if (current.type == TOKEN_COMMA) current = nextToken();
-                            }
-                            eat(TOKEN_RPAREN);
-                            eat(TOKEN_SEMI);
-                            return std::make_unique<StructVarDeclNode>(
-                                qualName, varName, callName, std::move(args), tokLine, tokCol);
-                        }
-                        eat(TOKEN_SEMI);
-                        return std::make_unique<StructVarDeclNode>(
-                            qualName, varName, "@copy:" + callName,
-                            std::vector<NodePtr>{}, tokLine, tokCol);
-                    }
-                    reportError(sourceFile, current.line, current.col,
-                        "struct variable '" + varName + "' must be initialized with a function call or another struct variable",
-                        getSourceLine(current.line), std::max(1,(int)current.value.size()),
-                        "example: " + qualName + " p = makePoint(1, 2);");
-                }
-                // geo::Point a;
-                eat(TOKEN_SEMI);
-                return std::make_unique<StructVarDeclNode>(qualName, varName, tokLine, tokCol);
-            }
-
-            // geo::func(...);  — chamada de função com namespace
-            eat(TOKEN_LPAREN);
-            std::vector<NodePtr> args;
-            while (current.type != TOKEN_RPAREN) {
-                if (current.type == TOKEN_EOF) {
+            eat(TOKEN_LBRACE);
+            while (current.type != TOKEN_RBRACE) {
+                if (current.type == TOKEN_EOF)
                     reportError(sourceFile, tokLine, tokCol,
-                        "unterminated argument list for '" + qualName + "()'",
-                        getSourceLine(tokLine), (int)qualName.size(), "add ')'");
-                }
-                args.push_back(parseExpr());
+                        "unterminated initializer for array '" + name + "'",
+                        getSourceLine(tokLine), (int)name.size(), "add '}'");
+                init.push_back(parseExpr());
                 if (current.type == TOKEN_COMMA) current = nextToken();
             }
-            eat(TOKEN_RPAREN);
-            eat(TOKEN_SEMI);
-            return std::make_unique<CallNode>(qualName, std::move(args), tokLine, tokCol);
+            eat(TOKEN_RBRACE);
         }
-        // StructType varName;  ou  StructType varName = func(...);
-        // StructType arr[N];  — array de struct
-        if (current.type == TOKEN_IDENT) {
-            std::string varName = current.value;
+        eat(TOKEN_SEMI);
+        arraySizes[name] = size;
+        if (!isMut) immutableVars.insert(name);
+        declaredVarNames.insert(name);
+        if (type == DataType::Custom)
+            return std::make_unique<ArrayDeclNode>(type, customTypeName, name, size,
+                                                   std::move(init), tokLine, tokCol, isMut);
+        return std::make_unique<ArrayDeclNode>(type, name, size,
+                                               std::move(init), tokLine, tokCol, isMut);
+    }
+
+    // Struct var: let [mut] p: Point = ...;
+    if (type == DataType::Custom) {
+        if (!isMut) immutableVars.insert(name);
+        declaredVarNames.insert(name);
+        if (current.type == TOKEN_ASSIGN) {
             current = nextToken();
-            // StructType varName = func(...);
-            if (current.type == TOKEN_ASSIGN) {
+            // Inicialização literal: let mut p: Point = { x: 1, y: 2 }
+            if (current.type == TOKEN_LBRACE) {
                 current = nextToken();
-                if (current.type == TOKEN_IDENT) {
-                    std::string callName = current.value;
-                    current = nextToken();
-                    if (current.type == TOKEN_LPAREN) {
-                        current = nextToken();
-                        std::vector<NodePtr> args;
-                        while (current.type != TOKEN_RPAREN) {
-                            if (current.type == TOKEN_EOF)
-                                reportError(sourceFile, tokLine, tokCol,
-                                    "unterminated argument list for '" + callName + "()'",
-                                    getSourceLine(tokLine), (int)callName.size(), "add ')'");
-                            args.push_back(parseExpr());
-                            if (current.type == TOKEN_COMMA) current = nextToken();
-                        }
-                        eat(TOKEN_RPAREN);
-                        eat(TOKEN_SEMI);
-                        return std::make_unique<StructVarDeclNode>(
-                            firstName, varName, callName, std::move(args), tokLine, tokCol);
-                    }
-                    // StructType varName = outraVar;  (cópia de struct)
-                    eat(TOKEN_SEMI);
-                    // Cria StructVarDeclNode com initFuncName = "@copy:" + callName
-                    return std::make_unique<StructVarDeclNode>(
-                        firstName, varName, "@copy:" + callName,
-                        std::vector<NodePtr>{}, tokLine, tokCol);
+                std::vector<NodePtr> args;
+                std::string fieldNames; // "x,y,z" — codegen vai usar pra mapear
+                while (current.type != TOKEN_RBRACE) {
+                    if (current.type == TOKEN_EOF)
+                        reportError(sourceFile, tokLine, tokCol,
+                            "unterminated struct initializer for '" + name + "'",
+                            getSourceLine(tokLine), (int)name.size(), "add '}'");
+                    std::string fieldName = eat(TOKEN_IDENT).value;
+                    eat(TOKEN_COLON);
+                    args.push_back(parseExpr());
+                    if (!fieldNames.empty()) fieldNames += ",";
+                    fieldNames += fieldName;
+                    if (current.type == TOKEN_COMMA) current = nextToken();
                 }
-                reportError(sourceFile, current.line, current.col,
-                    "struct variable '" + varName + "' must be initialized with a function call or another struct variable",
-                    getSourceLine(current.line), std::max(1,(int)current.value.size()),
-                    "example: Point p = makePoint(1, 2);  or  Point p = other;");
-            }
-            // StructType arr[N];  — array de struct local
-            if (current.type == TOKEN_LBRACKET) {
-                current = nextToken();
-                if (current.type != TOKEN_INT_LIT)
-                    reportError(sourceFile, current.line, current.col,
-                        "array size must be a constant integer",
-                        getSourceLine(current.line), std::max(1,(int)current.value.size()),
-                        "example: " + firstName + " " + varName + "[10];");
-                int sizeLine = current.line, sizeCol = current.col;
-                int size = safeStoi(eat(TOKEN_INT_LIT).value, sizeLine, sizeCol);
-                if (size <= 0)
-                    reportError(sourceFile, sizeLine, sizeCol,
-                        "array size must be positive", getSourceLine(sizeLine), 1);
-                eat(TOKEN_RBRACKET);
+                eat(TOKEN_RBRACE);
                 eat(TOKEN_SEMI);
-                arraySizes[varName] = size;
-                return std::make_unique<ArrayDeclNode>(DataType::Custom, firstName, varName, size,
-                                                       std::vector<NodePtr>{}, tokLine, tokCol);
+                return std::make_unique<StructVarDeclNode>(
+                    customTypeName, name, "@literal:" + fieldNames,
+                    std::move(args), isMut, tokLine, tokCol);
             }
-            eat(TOKEN_SEMI);
-            return std::make_unique<StructVarDeclNode>(firstName, varName, tokLine, tokCol);
-        }
-        // Reprocessa como IDENT normal (atribuição, chamada, etc.)
-        {
-            std::string name = firstName;
-            if (current.type == TOKEN_LBRACKET) {
+            if (current.type == TOKEN_IDENT) {
+                std::string callName = current.value;
                 current = nextToken();
-                int idxLine = current.line, idxCol = current.col;
-                auto index = parseExpr();
-                eat(TOKEN_RBRACKET);
-                if (auto* lit = dynamic_cast<IntLitNode*>(index.get())) {
-                    auto it = arraySizes.find(name);
-                    if (it != arraySizes.end()) {
-                        int idx = lit->value;
-                        if (idx < 0)
-                            reportError(sourceFile, idxLine, idxCol,
-                                "negative array index " + std::to_string(idx) + " for '" + name + "'",
-                                getSourceLine(idxLine), (int)std::to_string(idx).size(),
-                                "array indices start at 0");
-                        if (idx >= it->second)
-                            reportError(sourceFile, idxLine, idxCol,
-                                "index " + std::to_string(idx) +
-                                " is out of bounds for array '" + name +
-                                "' (size " + std::to_string(it->second) + ")",
-                                getSourceLine(idxLine), (int)std::to_string(idx).size(),
-                                "valid indices are 0 to " + std::to_string(it->second - 1));
-                    }
-                }
-                // arr[i].field = val;
-                if (current.type == TOKEN_DOT) {
-                    current = nextToken();
-                    std::string field = eat(TOKEN_IDENT).value;
-                    if (current.type != TOKEN_ASSIGN)
-                        reportError(sourceFile, current.line, current.col,
-                            "expected '=' after '" + name + "[index]." + field + "'",
-                            getSourceLine(current.line), 1,
-                            "syntax: " + name + "[index]." + field + " = value;");
-                    eat(TOKEN_ASSIGN);
-                    auto val = parseExpr();
-                    eat(TOKEN_SEMI);
-                    return std::make_unique<ArrayFieldAssignNode>(
-                        name, std::move(index), field, std::move(val), tokLine, tokCol);
-                }
-                if (current.type != TOKEN_ASSIGN) {
-                    reportError(sourceFile, current.line, current.col,
-                        "expected '=' after array index in assignment",
-                        getSourceLine(current.line), 1,
-                        "syntax: " + name + "[index] = value;");
-                }
-                eat(TOKEN_ASSIGN);
-                // arr[i] = func(...)  ou  arr[i] = outraVar  — pode ser struct
-                if (current.type == TOKEN_IDENT) {
-                    LexerState st2 = saveLexerState();
-                    Token saved2 = current;
-                    std::string rhsName = current.value;
-                    current = nextToken();
-                    if (current.type == TOKEN_LPAREN) {
-                        // arr[i] = func(...);  — função possivelmente retornando struct
-                        current = nextToken();
-                        std::vector<NodePtr> callArgs;
-                        while (current.type != TOKEN_RPAREN) {
-                            if (current.type == TOKEN_EOF)
-                                reportError(sourceFile, tokLine, tokCol,
-                                    "unterminated argument list for '" + rhsName + "()'",
-                                    getSourceLine(tokLine), (int)rhsName.size(), "add ')'");
-                            callArgs.push_back(parseExpr());
-                            if (current.type == TOKEN_COMMA) current = nextToken();
-                        }
-                        eat(TOKEN_RPAREN);
-                        eat(TOKEN_SEMI);
-                        return std::make_unique<ArrayStructAssignNode>(
-                            name, std::move(index), rhsName, std::move(callArgs), tokLine, tokCol);
-                    }
-                    if (current.type == TOKEN_SEMI) {
-                        // arr[i] = outraVar;  — cópia de struct
-                        eat(TOKEN_SEMI);
-                        return std::make_unique<ArrayStructAssignNode>(
-                            name, std::move(index), "@copy:" + rhsName,
-                            std::vector<NodePtr>{}, tokLine, tokCol);
-                    }
-                    // Não é struct — restaura e parseia normalmente
-                    restoreLexerState(st2);
-                    current = saved2;
-                }
-                auto val = parseExpr();
-                eat(TOKEN_SEMI);
-                return std::make_unique<ArrayAssignNode>(name, std::move(index), std::move(val), tokLine, tokCol);
-            }
-            if (current.type == TOKEN_DOT) {
-                current = nextToken();
-                std::string member = eat(TOKEN_IDENT).value;
                 if (current.type == TOKEN_LPAREN) {
                     current = nextToken();
                     std::vector<NodePtr> args;
                     while (current.type != TOKEN_RPAREN) {
                         if (current.type == TOKEN_EOF)
                             reportError(sourceFile, tokLine, tokCol,
-                                "unterminated argument list for '" + name + "." + member + "()'",
-                                getSourceLine(tokLine), (int)member.size(), "add ')'");
+                                "unterminated argument list for '" + callName + "()'",
+                                getSourceLine(tokLine), (int)callName.size(), "add ')'");
                         args.push_back(parseExpr());
                         if (current.type == TOKEN_COMMA) current = nextToken();
                     }
                     eat(TOKEN_RPAREN);
                     eat(TOKEN_SEMI);
-                    return std::make_unique<MethodCallNode>(name, member, std::move(args), tokLine, tokCol);
+                    return std::make_unique<StructVarDeclNode>(
+                        customTypeName, name, callName, std::move(args), isMut, tokLine, tokCol);
                 }
-                if (current.type != TOKEN_ASSIGN)
-                    reportError(sourceFile, current.line, current.col,
-                        "expected '=' after field access '" + name + "." + member + "'",
-                        getSourceLine(current.line), 1,
-                        "syntax: " + name + "." + member + " = value;");
-                eat(TOKEN_ASSIGN);
-                auto val = parseExpr();
                 eat(TOKEN_SEMI);
-                return std::make_unique<FieldAssignNode>(name, member, std::move(val), tokLine, tokCol);
+                return std::make_unique<StructVarDeclNode>(
+                    customTypeName, name, "@copy:" + callName,
+                    std::vector<NodePtr>{}, isMut, tokLine, tokCol);
             }
-            if (current.type == TOKEN_PLUS && peekToken().type == TOKEN_PLUS) {
-                eat(TOKEN_PLUS); eat(TOKEN_PLUS); eat(TOKEN_SEMI);
-                return std::make_unique<VarAssignNode>(name, "++", nullptr, tokLine, tokCol);
-            }
-            if (current.type == TOKEN_MINUS && peekToken().type == TOKEN_MINUS) {
-                eat(TOKEN_MINUS); eat(TOKEN_MINUS); eat(TOKEN_SEMI);
-                return std::make_unique<VarAssignNode>(name, "--", nullptr, tokLine, tokCol);
-            }
-            auto tryCompound = [&](TokenType opTok, const std::string& opStr) -> NodePtr {
-                if (current.type == opTok && peekToken().type == TOKEN_ASSIGN) {
-                    eat(opTok); eat(TOKEN_ASSIGN);
-                    auto val = parseExpr(); eat(TOKEN_SEMI);
-                    return std::make_unique<VarAssignNode>(name, opStr, std::move(val), tokLine, tokCol);
-                }
-                return nullptr;
-            };
-            if (auto nd = tryCompound(TOKEN_PLUS,  "+=")) return nd;
-            if (auto nd = tryCompound(TOKEN_MINUS, "-=")) return nd;
-            if (auto nd = tryCompound(TOKEN_STAR,  "*=")) return nd;
-            if (auto nd = tryCompound(TOKEN_SLASH, "/=")) return nd;
-            if (current.type == TOKEN_ASSIGN) {
-                eat(TOKEN_ASSIGN);
-                // Verifica se é atribuição de struct: name = func(...) ou name = outraVar
-                // Para isso, fazemos lookahead: se o próximo token após IDENT é '(' → função retornando struct
-                if (current.type == TOKEN_IDENT) {
-                    LexerState st = saveLexerState();
-                    Token saved = current;
-                    std::string rhsName = current.value;
-                    current = nextToken();
-                    // Suporte a ns::func(...) no RHS: janela = geo::makeRect(...)
-                    if (current.type == TOKEN_COLONCOLON) {
-                        current = nextToken();
-                        rhsName = rhsName + "::" + eat(TOKEN_IDENT).value;
-                    }
-                    if (current.type == TOKEN_LPAREN) {
-                        current = nextToken();
-                        std::vector<NodePtr> args;
-                        while (current.type != TOKEN_RPAREN) {
-                            if (current.type == TOKEN_EOF)
-                                reportError(sourceFile, tokLine, tokCol,
-                                    "unterminated argument list for '" + rhsName + "()'",
-                                    getSourceLine(tokLine), (int)rhsName.size(), "add ')'");
-                            args.push_back(parseExpr());
-                            if (current.type == TOKEN_COMMA) current = nextToken();
-                        }
-                        eat(TOKEN_RPAREN);
-                        eat(TOKEN_SEMI);
-                        return std::make_unique<StructAssignNode>(
-                            name, rhsName, std::move(args), tokLine, tokCol);
-                    }
-                    // Não é chamada — restaura e parseia como VarAssignNode normal
-                    restoreLexerState(st);
-                    current = saved;
-                }
-                auto val = parseExpr(); eat(TOKEN_SEMI);
-                return std::make_unique<VarAssignNode>(name, "=", std::move(val), tokLine, tokCol);
-            }
-            if (current.type == TOKEN_LPAREN) {
-                current = nextToken();
-                std::vector<NodePtr> args;
-                while (current.type != TOKEN_RPAREN) {
-                    if (current.type == TOKEN_EOF)
-                        reportError(sourceFile, tokLine, tokCol,
-                            "unterminated argument list for '" + name + "()'",
-                            getSourceLine(tokLine), (int)name.size(), "add ')'");
-                    args.push_back(parseExpr());
-                    if (current.type == TOKEN_COMMA) current = nextToken();
-                }
-                eat(TOKEN_RPAREN); eat(TOKEN_SEMI);
-                return std::make_unique<CallNode>(name, std::move(args), tokLine, tokCol);
-            }
-            // Nenhuma operação reconhecida — erro contextual com dica
-            {
-                std::string ln = getSourceLine(current.line);
-                std::string hint;
-                if (current.type == TOKEN_EQ)
-                    hint = "use '=' for assignment: " + name + " = value;";
-                else if (current.type == TOKEN_PLUS || current.type == TOKEN_MINUS ||
-                         current.type == TOKEN_STAR  || current.type == TOKEN_SLASH)
-                    hint = "did you forget '='? example: " + name + " = " + name + " " + current.value + " expr;";
-                else
-                    hint = didYouMean(name, declaredVarNames);
-                reportError(sourceFile, current.line, current.col,
-                            "unexpected '" + current.value + "' after '" + name + "'",
-                            ln, std::max(1,(int)current.value.size()), hint);
-            }
+            reportError(sourceFile, current.line, current.col,
+                "struct variable '" + name + "' must be initialized with a function call, another variable, or a literal { field: value, ... }",
+                getSourceLine(current.line), std::max(1,(int)current.value.size()),
+                "example: let p: Point = { x: 1, y: 2 };");
         }
-    }
-
-    // Declaração de variável local (tipos primitivos)
-    if (current.type == TOKEN_INT    || current.type == TOKEN_FLOAT ||
-        current.type == TOKEN_STRING || current.type == TOKEN_DOUBLE ||
-        current.type == TOKEN_LONG   || current.type == TOKEN_CHAR) {
-        int tokLine = current.line, tokCol = current.col;
-        DataType type = parseDataType();
-        std::string name = eat(TOKEN_IDENT).value;
-        if (current.type == TOKEN_LBRACKET) {
-            current = nextToken();
-            if (current.type != TOKEN_INT_LIT) {
-                reportError(sourceFile, current.line, current.col,
-                            "array size must be a constant integer, but found '" + current.value + "'",
-                            getSourceLine(current.line), std::max(1,(int)current.value.size()),
-                            "example: int nums[10];  — dynamic sizes are not supported");
-            }
-            int sizeLine = current.line, sizeCol = current.col;
-            int size = safeStoi(eat(TOKEN_INT_LIT).value, sizeLine, sizeCol);
-            if (size <= 0)
-                reportError(sourceFile, sizeLine, sizeCol,
-                            "array size must be positive, but got " + std::to_string(size),
-                            getSourceLine(sizeLine), std::max(1,(int)std::to_string(size).size()));
-            eat(TOKEN_RBRACKET);
-            std::vector<NodePtr> init;
-            if (current.type == TOKEN_ASSIGN) {
-                current = nextToken();
-                eat(TOKEN_LBRACE);
-                while (current.type != TOKEN_RBRACE) {
-                    if (current.type == TOKEN_EOF)
-                        reportError(sourceFile, tokLine, tokCol,
-                            "unterminated array initializer for '" + name + "'",
-                            getSourceLine(tokLine), (int)name.size(), "add '}'");
-                    init.push_back(parseExpr());
-                    if (current.type == TOKEN_COMMA) current = nextToken();
-                }
-                if ((int)init.size() > size)
-                    reportError(sourceFile, tokLine, tokCol,
-                        "too many initializers for array '" + name + "': "
-                        "declared size " + std::to_string(size) +
-                        " but got " + std::to_string(init.size()) + " values",
-                        getSourceLine(tokLine), (int)name.size(),
-                        "remove " + std::to_string((int)init.size() - size) + " extra value(s)");
-                eat(TOKEN_RBRACE);
-            }
-            eat(TOKEN_SEMI);
-            arraySizes[name] = size;
-            return std::make_unique<ArrayDeclNode>(type, name, size, std::move(init), tokLine, tokCol);
-        }
-        NodePtr initVal = nullptr;
-        if (current.type == TOKEN_ASSIGN) { current = nextToken(); initVal = parseExpr(); }
         eat(TOKEN_SEMI);
-        declaredVarNames.insert(name);
-        return std::make_unique<VarDeclNode>(type, name, std::move(initVal), tokLine, tokCol);
+        return std::make_unique<StructVarDeclNode>(customTypeName, name, isMut, tokLine, tokCol);
     }
 
+    // Variável primitiva
+    NodePtr init = nullptr;
+    if (current.type == TOKEN_ASSIGN) {
+        current = nextToken();
+        init = parseExpr();
+    } else {
+        // Sem inicializador — erro rigoroso como Rust
+        reportError(sourceFile, current.line, current.col,
+                    "variable '" + name + "' must be initialized",
+                    getSourceLine(current.line), std::max(1,(int)current.value.size()),
+                    "add '= value' before the semicolon, or use 'let mut " +
+                    name + ": " + (type == DataType::Int ? "i32" : "Type") + " = 0;'");
+    }
+    eat(TOKEN_SEMI);
+    if (!isMut) immutableVars.insert(name);
+    declaredVarNames.insert(name);
+    return std::make_unique<VarDeclNode>(type, name, std::move(init), isMut, tokLine, tokCol);
+}
+
+// ── Parsing de statement ──────────────────────────────────────────────────────
+static NodePtr parseStatement() {
+    int tokLine = current.line, tokCol = current.col;
+
+    // ── *ptr = value; ─────────────────────────────────────────────────────────
+    if (current.type == TOKEN_STAR) {
+        int dl = current.line, dc = current.col;
+        current = nextToken(); // consome '*'
+
+        auto operand = parsePrimary();
+        auto target = std::make_unique<DerefNode>(std::move(operand), DataType::Int, dl, dc);
+
+        if (current.type != TOKEN_ASSIGN)
+            reportError(sourceFile, current.line, current.col,
+                        "expected '=' after dereference target",
+                        getSourceLine(current.line), std::max(1, (int)current.value.size()),
+                        "syntax: *ptr = value;");
+        eat(TOKEN_ASSIGN);
+        auto value = parseExpr();
+        eat(TOKEN_SEMI);
+        return std::make_unique<DerefAssignNode>(
+            std::move(target), std::move(value), DataType::Int, tokLine, tokCol);
+    }
+
+    // ── return ────────────────────────────────────────────────────────────────
     if (current.type == TOKEN_RETURN) {
         current = nextToken();
-        if (current.type == TOKEN_SEMI) { current = nextToken(); return std::make_unique<ReturnNode>(nullptr); }
-        auto expr = parseExpr();
+        if (current.type == TOKEN_SEMI) {
+            current = nextToken();
+            return std::make_unique<ReturnNode>(nullptr);
+        }
+        auto e = parseExpr();
         eat(TOKEN_SEMI);
-        return std::make_unique<ReturnNode>(std::move(expr));
+        return std::make_unique<ReturnNode>(std::move(e));
     }
 
+    // ── let ───────────────────────────────────────────────────────────────────
+    if (current.type == TOKEN_LET) {
+        current = nextToken();
+        return parseLetDecl(tokLine, tokCol);
+    }
+
+    // ── if ────────────────────────────────────────────────────────────────────
+    // Sintaxe: if cond { } [else { }]
+    // Parênteses opcionais ao redor da condição (mantidos para compatibilidade)
     if (current.type == TOKEN_IF) {
         current = nextToken();
-        if (current.type != TOKEN_LPAREN)
-            reportError(sourceFile, current.line, current.col,
-                        "expected '(' after 'if', but found '" + current.value + "'",
-                        getSourceLine(current.line), std::max(1,(int)current.value.size()),
-                        "syntax: if (condition) then { ... }");
-        eat(TOKEN_LPAREN);
+        bool hasParen = (current.type == TOKEN_LPAREN);
+        if (hasParen) current = nextToken();
         auto cond = parseExpr();
-        eat(TOKEN_RPAREN);
-        if (current.type != TOKEN_THEN) {
-            std::string hint = "Nova requires 'then': if (cond) then { ... }";
-            if (current.type == TOKEN_LBRACE)
-                hint = "insert 'then' between ')' and '{': if (cond) then { ... }";
+        if (hasParen) eat(TOKEN_RPAREN);
+        // Erro explícito se vier `then` (sintaxe antiga)
+        if (current.type == TOKEN_THEN) {
+            std::string ln = getSourceLine(current.line);
             reportError(sourceFile, current.line, current.col,
-                        "expected 'then' after if condition, but found '" + current.value + "'",
-                        getSourceLine(current.line), std::max(1,(int)current.value.size()), hint);
+                        "unexpected 'then'",
+                        ln, 4,
+                        "use: if condition { ... }");
         }
-        eat(TOKEN_THEN);
         auto thenBlock = parseBlock();
         std::vector<NodePtr> elseBlock;
         if (current.type == TOKEN_ELSE) {
             current = nextToken();
-            if (current.type == TOKEN_IF) elseBlock.push_back(parseStatement());
-            else elseBlock = parseBlock();
+            if (current.type == TOKEN_IF) {
+                // else if encadeado
+                elseBlock.push_back(parseStatement());
+            } else {
+                elseBlock = parseBlock();
+            }
         }
         return std::make_unique<IfNode>(std::move(cond), std::move(thenBlock), std::move(elseBlock));
     }
 
+    // ── while ─────────────────────────────────────────────────────────────────
+    // Sintaxe: while cond { }
     if (current.type == TOKEN_WHILE) {
         current = nextToken();
-        if (current.type != TOKEN_LPAREN)
+        if (current.type != TOKEN_LPAREN && current.type != TOKEN_IDENT &&
+            current.type != TOKEN_INT_LIT && current.type != TOKEN_NOT &&
+            current.type != TOKEN_TRUE && current.type != TOKEN_FALSE &&
+            current.type != TOKEN_MINUS)
             reportError(sourceFile, current.line, current.col,
-                        "expected '(' after 'while', but found '" + current.value + "'",
+                        "expected condition after 'while', but found '" + current.value + "'",
                         getSourceLine(current.line), std::max(1,(int)current.value.size()),
-                        "syntax: while (condition) { ... }");
-        eat(TOKEN_LPAREN);
+                        "syntax: while condition { ... }");
+        bool hasParen = (current.type == TOKEN_LPAREN);
+        if (hasParen) current = nextToken();
         auto cond = parseExpr();
-        eat(TOKEN_RPAREN);
+        if (hasParen) eat(TOKEN_RPAREN);
         return std::make_unique<WhileNode>(std::move(cond), parseBlock());
     }
 
+    // ── for ───────────────────────────────────────────────────────────────────
+    // Sintaxe: for (init; cond; step) { }
     if (current.type == TOKEN_FOR) {
         current = nextToken();
         if (current.type != TOKEN_LPAREN)
@@ -946,37 +808,49 @@ static NodePtr parseStatement() {
                         getSourceLine(current.line), std::max(1,(int)current.value.size()),
                         "syntax: for (init; condition; step) { ... }");
         eat(TOKEN_LPAREN);
+
         NodePtr init;
-        if (current.type == TOKEN_INT  || current.type == TOKEN_FLOAT  ||
-            current.type == TOKEN_STRING || current.type == TOKEN_DOUBLE ||
-            current.type == TOKEN_LONG   || current.type == TOKEN_CHAR) {
-            int tl = current.line, tc = current.col;
-            DataType type = parseDataType();
+        // Inicializador: `let [mut] i: i32 = 0` (sem ;) ou `i = 0`
+        if (current.type == TOKEN_LET) {
+            current = nextToken();
+            bool letMut = false;
+            if (current.type == TOKEN_MUT) { letMut = true; current = nextToken(); }
             std::string nm = eat(TOKEN_IDENT).value;
+            DataType type = DataType::Int;
+            if (current.type == TOKEN_COLON) {
+                current = nextToken();
+                type = parseDataType();
+            }
             NodePtr iv = nullptr;
             if (current.type == TOKEN_ASSIGN) { current = nextToken(); iv = parseExpr(); }
-            init = std::make_unique<VarDeclNode>(type, nm, std::move(iv), tl, tc);
+            // Em for-loop, a variável de iteração é sempre tratada como mutável
+            init = std::make_unique<VarDeclNode>(type, nm, std::move(iv), true, tokLine, tokCol);
+            declaredVarNames.insert(nm);
         } else if (current.type == TOKEN_IDENT) {
             std::string nm = current.value;
             int tl = current.line, tc = current.col;
-            current = nextToken(); eat(TOKEN_ASSIGN);
+            current = nextToken();
+            eat(TOKEN_ASSIGN);
             init = std::make_unique<VarAssignNode>(nm, "=", parseExpr(), tl, tc);
         } else if (current.type != TOKEN_SEMI) {
             reportError(sourceFile, current.line, current.col,
-                        "invalid for-loop initializer — expected a variable declaration or assignment",
+                        "invalid for-loop initializer — expected 'let' or an assignment",
                         getSourceLine(current.line), std::max(1,(int)current.value.size()),
-                        "example: for (int i = 0; i < 10; i++) { ... }");
+                        "example: for (let mut i: i32 = 0; i < 10; i++) { ... }");
         }
         eat(TOKEN_SEMI);
+
         auto cond = parseExpr();
         eat(TOKEN_SEMI);
+
+        // Step
         NodePtr step;
+        if (current.type != TOKEN_IDENT)
+            reportError(sourceFile, current.line, current.col,
+                        "expected variable name for for-loop step, but found '" + current.value + "'",
+                        getSourceLine(current.line), std::max(1,(int)current.value.size()),
+                        "valid steps: i++,  i--,  i += 2,  i = i + 1");
         {
-            if (current.type != TOKEN_IDENT)
-                reportError(sourceFile, current.line, current.col,
-                            "expected variable name for for-loop step, but found '" + current.value + "'",
-                            getSourceLine(current.line), std::max(1,(int)current.value.size()),
-                            "valid steps: i++,  i--,  i += 2,  i = i + 1");
             std::string nm = eat(TOKEN_IDENT).value;
             int tl = current.line, tc = current.col;
             if (current.type == TOKEN_PLUS && peekToken().type == TOKEN_PLUS)
@@ -1010,7 +884,7 @@ static NodePtr parseStatement() {
         return std::make_unique<ForNode>(std::move(init), std::move(cond), std::move(step), parseBlock());
     }
 
-    // ── asm / ir ─────────────────────────────────────────────────────────────
+    // ── asm / ir ──────────────────────────────────────────────────────────────
     auto extractVarRefs = [](const std::string& raw) {
         std::vector<std::string> vars; std::set<std::string> seen;
         for (size_t i = 0; i < raw.size(); i++) {
@@ -1038,8 +912,7 @@ static NodePtr parseStatement() {
         current = nextToken();
         std::string code; int depth = 1;
         while (current.type != TOKEN_EOF && depth > 0) {
-            if (current.type == TOKEN_LBRACE)
-                { depth++; code += "{ "; current = nextToken(); }
+            if      (current.type == TOKEN_LBRACE) { depth++; code += "{ "; current = nextToken(); }
             else if (current.type == TOKEN_RBRACE) {
                 depth--;
                 if (depth > 0) { code += "} "; current = nextToken(); }
@@ -1060,7 +933,347 @@ static NodePtr parseStatement() {
         return std::make_unique<IrNode>(code, vars, tl, tc);
     }
 
-    // ── Erro final: statement inválido ────────────────────────────────────────
+    // ── Statement que começa com IDENT: atribuição, chamada, acesso etc. ──────
+    if (current.type == TOKEN_IDENT) {
+        std::string firstName = current.value;
+        current = nextToken();
+
+        // namespace::... (statement qualificado)
+        if (current.type == TOKEN_COLONCOLON) {
+            current = nextToken();
+            std::string qualPart = eat(TOKEN_IDENT).value;
+            std::string qualName = firstName + "::" + qualPart;
+
+            // Declaração de variável struct qualificada: let p: ns::Point = ...
+            // — já tratada no parseLetDecl; aqui chegamos apenas se não houver `let`.
+            if (current.type == TOKEN_IDENT) {
+                std::string varName = current.value;
+                current = nextToken();
+                if (current.type == TOKEN_ASSIGN) {
+                    current = nextToken();
+                    if (current.type == TOKEN_IDENT) {
+                        std::string callName = current.value;
+                        current = nextToken();
+                        if (current.type == TOKEN_LPAREN) {
+                            current = nextToken();
+                            std::vector<NodePtr> args;
+                            while (current.type != TOKEN_RPAREN) {
+                                if (current.type == TOKEN_EOF)
+                                    reportError(sourceFile, tokLine, tokCol,
+                                        "unterminated argument list for '" + callName + "()'",
+                                        getSourceLine(tokLine), (int)callName.size(), "add ')'");
+                                args.push_back(parseExpr());
+                                if (current.type == TOKEN_COMMA) current = nextToken();
+                            }
+                            eat(TOKEN_RPAREN);
+                            eat(TOKEN_SEMI);
+                            return std::make_unique<StructVarDeclNode>(
+                                qualName, varName, callName, std::move(args), true, tokLine, tokCol);
+                        }
+                        eat(TOKEN_SEMI);
+                        return std::make_unique<StructVarDeclNode>(
+                            qualName, varName, "@copy:" + callName,
+                            std::vector<NodePtr>{}, true, tokLine, tokCol);
+                    }
+                }
+                eat(TOKEN_SEMI);
+                return std::make_unique<StructVarDeclNode>(qualName, varName, true, tokLine, tokCol);
+            }
+
+            if (current.type == TOKEN_ASSIGN) {
+                checkMutable(qualName, tokLine, tokCol);
+                current = nextToken();
+                auto val = parseExpr();
+                eat(TOKEN_SEMI);
+                return std::make_unique<VarAssignNode>(qualName, "=", std::move(val), tokLine, tokCol);
+            }
+            eat(TOKEN_LPAREN);
+            std::vector<NodePtr> args;
+            while (current.type != TOKEN_RPAREN) {
+                if (current.type == TOKEN_EOF)
+                    reportError(sourceFile, tokLine, tokCol,
+                        "unterminated argument list for '" + qualName + "()'",
+                        getSourceLine(tokLine), (int)qualName.size(), "add ')'");
+                args.push_back(parseExpr());
+                if (current.type == TOKEN_COMMA) current = nextToken();
+            }
+            eat(TOKEN_RPAREN);
+            eat(TOKEN_SEMI);
+            return std::make_unique<CallNode>(qualName, std::move(args), tokLine, tokCol);
+        }
+
+        // Struct var sem `let`: Point p;  ou  Point p = func();
+        // (mantido para compatibilidade — mas emite aviso sobre preferir `let`)
+        if (current.type == TOKEN_IDENT && declaredStructNames.count(firstName)) {
+            std::string varName = current.value;
+            current = nextToken();
+            if (current.type == TOKEN_ASSIGN) {
+                current = nextToken();
+                if (current.type == TOKEN_IDENT) {
+                    std::string callName = current.value;
+                    current = nextToken();
+                    if (current.type == TOKEN_LPAREN) {
+                        current = nextToken();
+                        std::vector<NodePtr> args;
+                        while (current.type != TOKEN_RPAREN) {
+                            if (current.type == TOKEN_EOF)
+                                reportError(sourceFile, tokLine, tokCol,
+                                    "unterminated argument list for '" + callName + "()'",
+                                    getSourceLine(tokLine), (int)callName.size(), "add ')'");
+                            args.push_back(parseExpr());
+                            if (current.type == TOKEN_COMMA) current = nextToken();
+                        }
+                        eat(TOKEN_RPAREN);
+                        eat(TOKEN_SEMI);
+                        return std::make_unique<StructVarDeclNode>(
+                            firstName, varName, callName, std::move(args), true, tokLine, tokCol);
+                    }
+                    eat(TOKEN_SEMI);
+                    return std::make_unique<StructVarDeclNode>(
+                        firstName, varName, "@copy:" + callName,
+                        std::vector<NodePtr>{}, true, tokLine, tokCol);
+                }
+            }
+            if (current.type == TOKEN_LBRACKET) {
+                current = nextToken();
+                if (current.type != TOKEN_INT_LIT)
+                    reportError(sourceFile, current.line, current.col,
+                        "array size must be a constant integer",
+                        getSourceLine(current.line), std::max(1,(int)current.value.size()),
+                        "example: let arr: " + firstName + "[10];");
+                int sizeLine = current.line, sizeCol = current.col;
+                int size = safeStoi(eat(TOKEN_INT_LIT).value, sizeLine, sizeCol);
+                if (size <= 0)
+                    reportError(sourceFile, sizeLine, sizeCol,
+                        "array size must be positive", getSourceLine(sizeLine), 1);
+                eat(TOKEN_RBRACKET);
+                eat(TOKEN_SEMI);
+                arraySizes[varName] = size;
+                return std::make_unique<ArrayDeclNode>(DataType::Custom, firstName, varName, size,
+                                                       std::vector<NodePtr>{}, tokLine, tokCol, true);
+            }
+            eat(TOKEN_SEMI);
+            return std::make_unique<StructVarDeclNode>(firstName, varName, true, tokLine, tokCol);
+        }
+
+        // Acesso a array: arr[i] = ...
+        if (current.type == TOKEN_LBRACKET) {
+            current = nextToken();
+            int idxLine = current.line, idxCol = current.col;
+            auto index = parseExpr();
+            eat(TOKEN_RBRACKET);
+            if (auto* lit = dynamic_cast<IntLitNode*>(index.get())) {
+                auto it = arraySizes.find(firstName);
+                if (it != arraySizes.end()) {
+                    int idx = lit->value;
+                    if (idx < 0)
+                        reportError(sourceFile, idxLine, idxCol,
+                            "negative array index " + std::to_string(idx) + " for '" + firstName + "'",
+                            getSourceLine(idxLine), (int)std::to_string(idx).size(),
+                            "array indices start at 0");
+                    if (idx >= it->second)
+                        reportError(sourceFile, idxLine, idxCol,
+                            "index " + std::to_string(idx) + " is out of bounds for array '"
+                            + firstName + "' (size " + std::to_string(it->second) + ")",
+                            getSourceLine(idxLine), (int)std::to_string(idx).size(),
+                            "valid indices are 0 to " + std::to_string(it->second - 1));
+                }
+            }
+            // arr[i].field = val;
+            if (current.type == TOKEN_DOT) {
+                current = nextToken();
+                std::string field = eat(TOKEN_IDENT).value;
+                if (current.type != TOKEN_ASSIGN)
+                    reportError(sourceFile, current.line, current.col,
+                        "expected '=' after '" + firstName + "[index]." + field + "'",
+                        getSourceLine(current.line), 1,
+                        "syntax: " + firstName + "[index]." + field + " = value;");
+                eat(TOKEN_ASSIGN);
+                auto val = parseExpr();
+                eat(TOKEN_SEMI);
+                return std::make_unique<ArrayFieldAssignNode>(
+                    firstName, std::move(index), field, std::move(val), tokLine, tokCol);
+            }
+            if (current.type != TOKEN_ASSIGN)
+                reportError(sourceFile, current.line, current.col,
+                    "expected '=' after array index in assignment",
+                    getSourceLine(current.line), 1,
+                    "syntax: " + firstName + "[index] = value;");
+            checkMutable(firstName, tokLine, tokCol);
+            eat(TOKEN_ASSIGN);
+            if (current.type == TOKEN_IDENT) {
+                LexerState st2 = saveLexerState();
+                Token saved2 = current;
+                std::string rhsName = current.value;
+                current = nextToken();
+                if (current.type == TOKEN_LPAREN) {
+                    current = nextToken();
+                    std::vector<NodePtr> callArgs;
+                    while (current.type != TOKEN_RPAREN) {
+                        if (current.type == TOKEN_EOF)
+                            reportError(sourceFile, tokLine, tokCol,
+                                "unterminated argument list for '" + rhsName + "()'",
+                                getSourceLine(tokLine), (int)rhsName.size(), "add ')'");
+                        callArgs.push_back(parseExpr());
+                        if (current.type == TOKEN_COMMA) current = nextToken();
+                    }
+                    eat(TOKEN_RPAREN);
+                    eat(TOKEN_SEMI);
+                    return std::make_unique<ArrayStructAssignNode>(
+                        firstName, std::move(index), rhsName, std::move(callArgs), tokLine, tokCol);
+                }
+                if (current.type == TOKEN_SEMI) {
+                    eat(TOKEN_SEMI);
+                    return std::make_unique<ArrayStructAssignNode>(
+                        firstName, std::move(index), "@copy:" + rhsName,
+                        std::vector<NodePtr>{}, tokLine, tokCol);
+                }
+                restoreLexerState(st2);
+                current = saved2;
+            }
+            auto val = parseExpr();
+            eat(TOKEN_SEMI);
+            return std::make_unique<ArrayAssignNode>(firstName, std::move(index), std::move(val), tokLine, tokCol);
+        }
+
+        // Acesso de campo / chamada de método como statement
+        if (current.type == TOKEN_DOT) {
+            current = nextToken();
+            std::string member = eat(TOKEN_IDENT).value;
+            std::string composedName = firstName;
+            std::string composedMember = member;
+            while (current.type == TOKEN_DOT) {
+                composedName = composedName + "." + composedMember;
+                current = nextToken();
+                composedMember = eat(TOKEN_IDENT).value;
+            }
+            if (current.type == TOKEN_LPAREN) {
+                current = nextToken();
+                std::vector<NodePtr> args;
+                while (current.type != TOKEN_RPAREN) {
+                    if (current.type == TOKEN_EOF)
+                        reportError(sourceFile, tokLine, tokCol,
+                            "unterminated argument list for '" + composedName + "." + composedMember + "()'",
+                            getSourceLine(tokLine), (int)composedMember.size(), "add ')'");
+                    args.push_back(parseExpr());
+                    if (current.type == TOKEN_COMMA) current = nextToken();
+                }
+                eat(TOKEN_RPAREN);
+                eat(TOKEN_SEMI);
+                return std::make_unique<MethodCallNode>(composedName, composedMember, std::move(args), tokLine, tokCol);
+            }
+            if (current.type != TOKEN_ASSIGN)
+                reportError(sourceFile, current.line, current.col,
+                    "expected '=' after field access '" + composedName + "." + composedMember + "'",
+                    getSourceLine(current.line), 1,
+                    "syntax: " + composedName + "." + composedMember + " = value;");
+            eat(TOKEN_ASSIGN);
+            auto val = parseExpr();
+            eat(TOKEN_SEMI);
+            return std::make_unique<FieldAssignNode>(composedName, composedMember, std::move(val), tokLine, tokCol);
+        }
+
+        // i++  /  i--
+        if (current.type == TOKEN_PLUS && peekToken().type == TOKEN_PLUS) {
+            checkMutable(firstName, tokLine, tokCol);
+            eat(TOKEN_PLUS); eat(TOKEN_PLUS); eat(TOKEN_SEMI);
+            return std::make_unique<VarAssignNode>(firstName, "++", nullptr, tokLine, tokCol);
+        }
+        if (current.type == TOKEN_MINUS && peekToken().type == TOKEN_MINUS) {
+            checkMutable(firstName, tokLine, tokCol);
+            eat(TOKEN_MINUS); eat(TOKEN_MINUS); eat(TOKEN_SEMI);
+            return std::make_unique<VarAssignNode>(firstName, "--", nullptr, tokLine, tokCol);
+        }
+
+        // Compound assignment: +=, -=, *=, /=
+        auto tryCompound = [&](TokenType opTok, const std::string& opStr) -> NodePtr {
+            if (current.type == opTok && peekToken().type == TOKEN_ASSIGN) {
+                checkMutable(firstName, tokLine, tokCol);
+                eat(opTok); eat(TOKEN_ASSIGN);
+                auto val = parseExpr(); eat(TOKEN_SEMI);
+                return std::make_unique<VarAssignNode>(firstName, opStr, std::move(val), tokLine, tokCol);
+            }
+            return nullptr;
+        };
+        if (auto nd = tryCompound(TOKEN_PLUS,  "+=")) return nd;
+        if (auto nd = tryCompound(TOKEN_MINUS, "-=")) return nd;
+        if (auto nd = tryCompound(TOKEN_STAR,  "*=")) return nd;
+        if (auto nd = tryCompound(TOKEN_SLASH, "/=")) return nd;
+
+        // Atribuição simples: x = expr
+        if (current.type == TOKEN_ASSIGN) {
+            checkMutable(firstName, tokLine, tokCol);
+            eat(TOKEN_ASSIGN);
+            if (current.type == TOKEN_IDENT) {
+                LexerState st = saveLexerState();
+                Token saved = current;
+                std::string rhsName = current.value;
+                current = nextToken();
+                if (current.type == TOKEN_COLONCOLON) {
+                    current = nextToken();
+                    rhsName = rhsName + "::" + eat(TOKEN_IDENT).value;
+                }
+                if (current.type == TOKEN_LPAREN) {
+                    current = nextToken();
+                    std::vector<NodePtr> args;
+                    while (current.type != TOKEN_RPAREN) {
+                        if (current.type == TOKEN_EOF)
+                            reportError(sourceFile, tokLine, tokCol,
+                                "unterminated argument list for '" + rhsName + "()'",
+                                getSourceLine(tokLine), (int)rhsName.size(), "add ')'");
+                        args.push_back(parseExpr());
+                        if (current.type == TOKEN_COMMA) current = nextToken();
+                    }
+                    eat(TOKEN_RPAREN);
+                    eat(TOKEN_SEMI);
+                    return std::make_unique<StructAssignNode>(
+                        firstName, rhsName, std::move(args), tokLine, tokCol);
+                }
+                restoreLexerState(st);
+                current = saved;
+            }
+            auto val = parseExpr(); eat(TOKEN_SEMI);
+            return std::make_unique<VarAssignNode>(firstName, "=", std::move(val), tokLine, tokCol);
+        }
+
+        // Chamada de função como statement: foo(...)
+        if (current.type == TOKEN_LPAREN) {
+            current = nextToken();
+            std::vector<NodePtr> args;
+            while (current.type != TOKEN_RPAREN) {
+                if (current.type == TOKEN_EOF)
+                    reportError(sourceFile, tokLine, tokCol,
+                        "unterminated argument list for '" + firstName + "()'",
+                        getSourceLine(tokLine), (int)firstName.size(), "add ')'");
+                args.push_back(parseExpr());
+                if (current.type == TOKEN_COMMA) current = nextToken();
+            }
+            eat(TOKEN_RPAREN); eat(TOKEN_SEMI);
+            return std::make_unique<CallNode>(firstName, std::move(args), tokLine, tokCol);
+        }
+
+        // Erro: statement inválido com IDENT
+        {
+            std::string ln = getSourceLine(current.line);
+            std::string hint = didYouMean(firstName, declaredVarNames);
+            if (hint.empty()) hint = didYouMean(firstName, declaredFunctionNames);
+
+            // Detecta padrão de declaração sem `let`
+            if (current.type == TOKEN_IDENT) {
+                reportError(sourceFile, tokLine, tokCol,
+                            "missing 'let' before variable declaration",
+                            ln, (int)firstName.size(),
+                            "use: let " + firstName + ": Type = value;  or  let mut " + firstName + ": Type = value;");
+            }
+            if (hint.empty())
+                hint = "statements must be: let, return, if, for, while, an assignment, or a function call";
+            reportError(sourceFile, current.line, current.col,
+                        "invalid statement after '" + firstName + "'",
+                        ln, std::max(1,(int)current.value.size()), hint);
+        }
+    }
+
+    // ── Erro final ────────────────────────────────────────────────────────────
     {
         std::string ln = getSourceLine(current.line);
         int tl = current.line, tc = current.col;
@@ -1075,13 +1288,25 @@ static NodePtr parseStatement() {
                         "unexpected end of file inside function body",
                         ln, 1, "add '}' to close the open function");
 
-        std::string hint;
-        if (current.type == TOKEN_IDENT) {
-            hint = didYouMean(current.value, declaredVarNames);
-            if (hint.empty()) hint = didYouMean(current.value, declaredFunctionNames);
+        // Detecta declaração legada de variável: `int x = ...` sem `let`
+        if (current.type == TOKEN_INT    || current.type == TOKEN_FLOAT  ||
+            current.type == TOKEN_STRING || current.type == TOKEN_VOID   ||
+            current.type == TOKEN_DOUBLE || current.type == TOKEN_LONG   ||
+            current.type == TOKEN_CHAR   || current.type == TOKEN_BOOL) {
+            std::string typeName = current.value;
+            current = nextToken();
+            std::string varName = (current.type == TOKEN_IDENT) ? current.value : "name";
+            reportError(sourceFile, tl, tc,
+                        "variable declarations require 'let'",
+                        ln, (int)typeName.size(),
+                        "use: let " + varName + ": " + typeName + " = value;  "
+                        "or: let mut " + varName + ": " + typeName + " = value;");
         }
+
+        std::string hint = didYouMean(current.value, declaredVarNames);
+        if (hint.empty()) hint = didYouMean(current.value, declaredFunctionNames);
         if (hint.empty())
-            hint = "statements must start with a type, variable name, or control keyword (if/for/while/return)";
+            hint = "statements must start with: let, return, if, for, while, or a variable/function name";
         reportError(sourceFile, tl, tc,
                     "invalid statement starting with '" + current.value + "'",
                     ln, tlen, hint);
@@ -1089,9 +1314,95 @@ static NodePtr parseStatement() {
     return nullptr;
 }
 
-ProgramNode parseProgram(const std::string& source, const std::string& filename);
+// ═══════════════════════════════════════════════════════════════════════════════
+// PARSING DE FUNÇÕES (fn)
+// ═══════════════════════════════════════════════════════════════════════════════
 
-// ── Parser de arquivos .nh ─────────────────────────────────────────────────────
+// Parseia parâmetros: `(name: Type, name: Type, ...)`
+// Também suporta `&self` e `&mut self` como primeiro parâmetro (impl methods)
+static std::vector<ParamNode> parseFnParams(const std::string& fnName,
+                                             int tokLine, int tokCol,
+                                             bool* hasRefSelf = nullptr) {
+    eat(TOKEN_LPAREN);
+    std::vector<ParamNode> params;
+    if (hasRefSelf) *hasRefSelf = false;
+
+    while (current.type != TOKEN_RPAREN) {
+        if (current.type == TOKEN_EOF)
+            reportError(sourceFile, tokLine, tokCol,
+                "unterminated parameter list for '" + fnName + "'",
+                getSourceLine(tokLine), (int)fnName.size(),
+                "add closing ')' and the function body");
+
+        // Variádico: ...
+        if (current.type == TOKEN_ELLIPSIS) {
+            current = nextToken();
+            break;
+        }
+
+        // &self  ou  &mut self
+        if (current.type == TOKEN_AMPERSAND) {
+            current = nextToken();
+            if (current.type == TOKEN_MUT) current = nextToken();  // &mut self
+            if (current.type == TOKEN_SELF) {
+                if (hasRefSelf) *hasRefSelf = true;
+                current = nextToken();
+                if (current.type == TOKEN_COMMA) current = nextToken();
+                continue;
+            }
+            reportError(sourceFile, current.line, current.col,
+                "expected 'self' after '&' in method receiver",
+                getSourceLine(current.line), std::max(1,(int)current.value.size()),
+                "use '&self' or '&mut self' as the first parameter of an impl method");
+        }
+
+        // self (sem &) — não suportado, erro explícito
+        if (current.type == TOKEN_SELF) {
+            std::string ln = getSourceLine(current.line);
+            reportError(sourceFile, current.line, current.col,
+                "bare 'self' receiver is not supported — use '&self' or '&mut self'",
+                ln, 4,
+                "example: fn method(&self, x: i32) -> void { ... }");
+        }
+
+        // name: Type  (Rust-style)
+        std::string pname = eat(TOKEN_IDENT).value;
+        eat(TOKEN_COLON);
+        DataType ptype = parseDataType();
+        std::string pStructType = (ptype == DataType::Custom) ? lastCustomTypeName : "";
+
+        // Suporte a arrays como parâmetros: name: Type[N] ou name: Type[]
+        // Codifica como "__arr__N__name" para o codegen registrar em localArrays
+        if (current.type == TOKEN_LBRACKET) {
+            current = nextToken();
+            int arrSize = 0;
+            if (current.type == TOKEN_INT_LIT) {
+                arrSize = std::stoi(current.value);
+                current = nextToken();
+            }
+            eat(TOKEN_RBRACKET);
+            // Codifica: pname vira "__arr__N__originalName", tipo permanece igual
+            pname = "__arr__" + std::to_string(arrSize) + "__" + pname;
+        }
+
+        params.push_back({ptype, pname, pStructType});
+        if (current.type == TOKEN_COMMA) current = nextToken();
+    }
+    eat(TOKEN_RPAREN);
+    return params;
+}
+
+// Parseia tipo de retorno: `-> Type` ou nada (implícito void)
+static DataType parseFnReturn() {
+    if (current.type != TOKEN_ARROW) return DataType::Void;
+    current = nextToken();
+    return parseDataType();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PARSING DE .nh (HEADER FILES)
+// ═══════════════════════════════════════════════════════════════════════════════
+
 static std::vector<NodePtr> parseNhFile(const std::string& nhPath,
                                          const std::string& includedFrom) {
     if (includedHeaders.count(nhPath)) return {};
@@ -1119,12 +1430,13 @@ static std::vector<NodePtr> parseNhFile(const std::string& nhPath,
         std::cerr << "\n";
         exit(1);
     }
+
     std::stringstream buf; buf << f.rdbuf();
     std::string nhSource = buf.str();
 
-    LexerState savedLexer  = saveLexerState();
-    Token savedCurrent     = current;
-    std::string savedSrc   = sourceFile;
+    LexerState savedLexer = saveLexerState();
+    Token savedCurrent    = current;
+    std::string savedSrc  = sourceFile;
 
     initLexer(nhSource);
     sourceFile = nhPath;
@@ -1144,24 +1456,47 @@ static std::vector<NodePtr> parseNhFile(const std::string& nhPath,
             int tl = current.line, tc = current.col;
             current = nextToken();
             std::string sName = eat(TOKEN_IDENT).value;
-            // Se há namespace ativo, qualifica o nome do struct: ns::StructName
             std::string qualSName = currentNhNamespace.empty() ? sName : currentNhNamespace + "::" + sName;
             eat(TOKEN_LBRACE);
             std::vector<StructField> fields;
             while (current.type != TOKEN_RBRACE && current.type != TOKEN_EOF) {
-                if (current.type == TOKEN_INT   || current.type == TOKEN_FLOAT  ||
-                    current.type == TOKEN_STRING || current.type == TOKEN_DOUBLE ||
-                    current.type == TOKEN_LONG   || current.type == TOKEN_VOID   ||
-                    current.type == TOKEN_CHAR) {
+                if (current.type == TOKEN_INT    || current.type == TOKEN_FLOAT  ||
+                    current.type == TOKEN_STRING  || current.type == TOKEN_DOUBLE ||
+                    current.type == TOKEN_LONG    || current.type == TOKEN_VOID   ||
+                    current.type == TOKEN_CHAR    || current.type == TOKEN_BOOL   ||
+                    current.type == TOKEN_IDENT) {
+                    // Campo Rust-style: name: Type,  ou  Type name;  (retro-compat)
+                    // Detecção: se o próximo após o IDENT for ':', é name: Type
+                    if (current.type == TOKEN_IDENT) {
+                        LexerState st = saveLexerState();
+                        Token savedTok = current;
+                        std::string maybeName = current.value;
+                        current = nextToken();
+                        if (current.type == TOKEN_COLON) {
+                            // Rust-style: name: Type,
+                            current = nextToken();
+                            DataType ft = parseDataType();
+                            std::string ftStruct = (ft == DataType::Custom) ? lastCustomTypeName : "";
+                            if (current.type == TOKEN_COMMA) current = nextToken();
+                            else if (current.type == TOKEN_SEMI) current = nextToken();
+                            fields.push_back({ft, maybeName, ftStruct});
+                            continue;
+                        }
+                        // Retro-compat: Type name;
+                        restoreLexerState(st);
+                        current = savedTok;
+                    }
                     DataType ft = parseDataType();
+                    std::string ftStruct = (ft == DataType::Custom) ? lastCustomTypeName : "";
                     std::string fn = eat(TOKEN_IDENT).value;
-                    eat(TOKEN_SEMI);
-                    fields.push_back({ft, fn});
+                    if (current.type == TOKEN_SEMI) current = nextToken();
+                    else if (current.type == TOKEN_COMMA) current = nextToken();
+                    fields.push_back({ft, fn, ftStruct});
                 } else {
                     reportError(nhPath, current.line, current.col,
-                                "struct fields in .nh must be primitive types",
+                                "unexpected token in struct field declaration",
                                 getSourceLine(current.line), std::max(1,(int)current.value.size()),
-                                "nested structs in .nh are not supported yet");
+                                "field syntax: name: Type,  (e.g. x: i32, y: f32)");
                 }
             }
             if (current.type == TOKEN_EOF)
@@ -1174,15 +1509,68 @@ static std::vector<NodePtr> parseNhFile(const std::string& nhPath,
                 qualSName, std::move(fields), std::vector<StructMethod>{}, tl, tc));
             continue;
         }
+
+        // fn declaração de função (header .nh)
+        if (current.type == TOKEN_FN) {
+            int tl = current.line, tc = current.col;
+            current = nextToken();
+            std::string name = eat(TOKEN_IDENT).value;
+            bool isVariadic = false;
+            auto params = parseFnParams(name, tl, tc);
+            // Verifica variádico (parseFnParams consome ..., mas não seta flag)
+            DataType retType = parseFnReturn();
+            std::string retStructTypeName = (retType == DataType::Custom) ? lastCustomTypeName : "";
+            eat(TOKEN_SEMI);
+            std::string qualName = currentNhNamespace.empty() ? name : currentNhNamespace + "::" + name;
+            decls.push_back(std::make_unique<FuncDeclNode>(
+                retType, retStructTypeName, qualName, std::move(params), isVariadic));
+            continue;
+        }
+
+        // Variável global: let NAME: TYPE = value;  (em header)
+        if (current.type == TOKEN_LET) {
+            int tl = current.line, tc = current.col;
+            current = nextToken();
+            if (current.type == TOKEN_MUT) current = nextToken();
+            std::string name = eat(TOKEN_IDENT).value;
+            eat(TOKEN_COLON);
+            DataType retType = parseDataType();
+            std::string retStructTypeName = (retType == DataType::Custom) ? lastCustomTypeName : "";
+            NodePtr init = nullptr;
+            if (current.type == TOKEN_ASSIGN) {
+                current = nextToken();
+                if (current.type == TOKEN_INT_LIT) {
+                    long long vl = safeStoll(current.value, current.line, current.col);
+                    current = nextToken();
+                    init = (vl > 2147483647LL || vl < -2147483648LL)
+                        ? (NodePtr)std::make_unique<LongLitNode>(vl)
+                        : (NodePtr)std::make_unique<IntLitNode>((int)vl);
+                } else if (current.type == TOKEN_FLOAT_LIT) {
+                    init = std::make_unique<FloatLitNode>(current.value); current = nextToken();
+                } else if (current.type == TOKEN_STRING_LIT) {
+                    init = std::make_unique<StringLitNode>(current.value); current = nextToken();
+                } else {
+                    reportError(nhPath, current.line, current.col,
+                                "only literal values are allowed as initializers in .nh files",
+                                getSourceLine(current.line), std::max(1,(int)current.value.size()),
+                                "expressions and function calls are not permitted here");
+                }
+            }
+            eat(TOKEN_SEMI);
+            std::string qn = currentNhNamespace.empty() ? name : currentNhNamespace + "::" + name;
+            decls.push_back(std::make_unique<VarDeclNode>(retType, qn, std::move(init), false, tl, tc));
+            continue;
+        }
+
+        // Sintaxe legada em .nh: Type name(...);  ou  Type name;
         if (current.type == TOKEN_INT    || current.type == TOKEN_FLOAT  ||
             current.type == TOKEN_STRING || current.type == TOKEN_VOID   ||
             current.type == TOKEN_DOUBLE || current.type == TOKEN_LONG   ||
-            current.type == TOKEN_CHAR   || current.type == TOKEN_IDENT) {
+            current.type == TOKEN_CHAR   || current.type == TOKEN_BOOL   ||
+            current.type == TOKEN_IDENT) {
             int tl = current.line, tc = current.col;
-            // Trata IDENT como possível tipo de retorno de struct
             DataType retType = parseDataType();
             std::string retStructTypeName = (retType == DataType::Custom) ? lastCustomTypeName : "";
-            // Se retType == Custom e next não é IDENT, é um erro
             std::string name = eat(TOKEN_IDENT).value;
             if (current.type == TOKEN_LPAREN) {
                 current = nextToken();
@@ -1190,24 +1578,19 @@ static std::vector<NodePtr> parseNhFile(const std::string& nhPath,
                 bool isVariadic = false;
                 while (current.type != TOKEN_RPAREN && current.type != TOKEN_EOF) {
                     if (current.type == TOKEN_ELLIPSIS) { isVariadic = true; current = nextToken(); break; }
-                    if (current.type == TOKEN_INT    || current.type == TOKEN_FLOAT  ||
-                        current.type == TOKEN_STRING || current.type == TOKEN_VOID   ||
-                        current.type == TOKEN_DOUBLE || current.type == TOKEN_LONG   ||
-                        current.type == TOKEN_CHAR   || current.type == TOKEN_IDENT) {
-                        DataType ptype = parseDataType();
-                        std::string pStructType = (ptype == DataType::Custom) ? lastCustomTypeName : "";
-                        std::string pname = "_";
-                        if (current.type == TOKEN_IDENT) pname = eat(TOKEN_IDENT).value;
-                        if (current.type == TOKEN_LBRACKET) {
-                            current = nextToken();
-                            if (current.type == TOKEN_INT_LIT) current = nextToken();
-                            eat(TOKEN_RBRACKET);
-                        }
-                        if (ptype == DataType::Custom)
-                            params.push_back({DataType::Void, "__struct__" + pStructType + "::" + pname, pStructType});
-                        else
-                            params.push_back({ptype, pname, ""});
-                    } else break;
+                    DataType ptype = parseDataType();
+                    std::string pStructType = (ptype == DataType::Custom) ? lastCustomTypeName : "";
+                    std::string pname = "_";
+                    if (current.type == TOKEN_IDENT) pname = eat(TOKEN_IDENT).value;
+                    if (current.type == TOKEN_LBRACKET) {
+                        current = nextToken();
+                        if (current.type == TOKEN_INT_LIT) current = nextToken();
+                        eat(TOKEN_RBRACKET);
+                    }
+                    if (ptype == DataType::Custom)
+                        params.push_back({DataType::Void, "__struct__" + pStructType + "::" + pname, pStructType});
+                    else
+                        params.push_back({ptype, pname, ""});
                     if (current.type == TOKEN_COMMA) current = nextToken();
                 }
                 if (current.type == TOKEN_EOF)
@@ -1243,14 +1626,15 @@ static std::vector<NodePtr> parseNhFile(const std::string& nhPath,
                 }
                 eat(TOKEN_SEMI);
                 std::string qn = currentNhNamespace.empty() ? name : currentNhNamespace + "::" + name;
-                decls.push_back(std::make_unique<VarDeclNode>(retType, qn, std::move(init), tl, tc));
+                decls.push_back(std::make_unique<VarDeclNode>(retType, qn, std::move(init), false, tl, tc));
             }
             continue;
         }
+
         reportError(nhPath, current.line, current.col,
                     "unexpected '" + current.value + "' in header file",
                     getSourceLine(current.line), std::max(1,(int)current.value.size()),
-                    ".nh files may only contain function signatures, struct definitions, "
+                    ".nh files may only contain fn signatures, struct definitions, "
                     "and global variable declarations");
     }
 
@@ -1260,17 +1644,107 @@ static std::vector<NodePtr> parseNhFile(const std::string& nhPath,
     return decls;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// PARSING DE `impl StructName { fn ... }`
+// Os métodos são injetados diretamente no StructDefNode já na lista de
+// declarações do programa — assim o codegen existente os encontra normalmente
+// sem precisar conhecer ImplNode.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+static void parseImpl(ProgramNode& program, int tokLine, int tokCol) {
+    std::string structName = eat(TOKEN_IDENT).value;
+
+    if (!declaredStructNames.count(structName)) {
+        std::string ln = getSourceLine(tokLine);
+        std::string hint = didYouMean(structName, declaredStructNames);
+        if (hint.empty())
+            hint = "'" + structName + "' was not declared as a struct — declare it before impl";
+        reportError(sourceFile, tokLine, tokCol,
+                    "cannot impl unknown type '" + structName + "'",
+                    ln, (int)structName.size(), hint);
+    }
+
+    // Encontra o StructDefNode correspondente para injetar os métodos
+    StructDefNode* targetStruct = nullptr;
+    for (auto& decl : program.declarations) {
+        if (auto* sd = dynamic_cast<StructDefNode*>(decl.get())) {
+            if (sd->name == structName) { targetStruct = sd; break; }
+        }
+    }
+    // Não deve acontecer pois declaredStructNames foi populado ao parsear o struct
+    if (!targetStruct) {
+        reportError(sourceFile, tokLine, tokCol,
+                    "internal error: struct '" + structName + "' not found in declarations",
+                    getSourceLine(tokLine), (int)structName.size());
+    }
+
+    eat(TOKEN_LBRACE);
+
+    while (current.type != TOKEN_RBRACE) {
+        if (current.type == TOKEN_EOF)
+            reportError(sourceFile, tokLine, tokCol,
+                        "unterminated impl '" + structName + "' — missing '}'",
+                        getSourceLine(tokLine), (int)structName.size());
+
+        if (current.type != TOKEN_FN)
+            reportError(sourceFile, current.line, current.col,
+                        "expected 'fn' inside impl block, but found '" + current.value + "'",
+                        getSourceLine(current.line), std::max(1,(int)current.value.size()),
+                        "impl blocks may only contain fn definitions");
+
+        int fnLine = current.line, fnCol = current.col;
+        current = nextToken();
+        std::string methodName = eat(TOKEN_IDENT).value;
+
+        // Verifica duplicata de método no mesmo impl
+        for (auto& existing : targetStruct->methods) {
+            if (existing.name == methodName) {
+                reportError(sourceFile, fnLine, fnCol,
+                            "method '" + methodName + "' is defined more than once in impl '" + structName + "'",
+                            getSourceLine(fnLine), (int)methodName.size(),
+                            "each method name must be unique within an impl block");
+            }
+        }
+
+        bool hasRefSelf = false;
+        auto params = parseFnParams(methodName, fnLine, fnCol, &hasRefSelf);
+        DataType retType = parseFnReturn();
+        std::string retStructType = (retType == DataType::Custom) ? lastCustomTypeName : "";
+
+        if (current.type == TOKEN_SEMI)
+            reportError(sourceFile, current.line, current.col,
+                        "method '" + methodName + "' has no body",
+                        getSourceLine(current.line), 1,
+                        "add the method body: { ... }");
+
+        declaredFunctionNames.insert(structName + "::" + methodName);
+        immutableVars.clear(); // novo escopo de função
+        auto body = parseBlock();
+        targetStruct->methods.push_back({retType, retStructType, methodName,
+                                         std::move(params), std::move(body), hasRefSelf});
+    }
+    eat(TOKEN_RBRACE);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PROGRAMA PRINCIPAL
+// ═══════════════════════════════════════════════════════════════════════════════
+
 ProgramNode parseProgram(const std::string& source, const std::string& filename) {
     sourceFile = filename;
     includedHeaders.clear();
     arraySizes.clear();
     declaredFunctionNames.clear();
     declaredVarNames.clear();
+    declaredStructNames.clear();
+    immutableVars.clear();
     initLexer(source);
     current = nextToken();
     ProgramNode program;
 
     while (current.type != TOKEN_EOF) {
+
+        // ── #include ──────────────────────────────────────────────────────────
         if (current.type == TOKEN_HASH) {
             int tl = current.line, tc = current.col;
             current = nextToken();
@@ -1305,192 +1779,177 @@ ProgramNode parseProgram(const std::string& source, const std::string& filename)
                 program.declarations.push_back(std::move(d));
             continue;
         }
+
+        // ── struct Foo { ... } ────────────────────────────────────────────────
+        // Apenas campos são permitidos dentro de struct.
+        // Sintaxe dos campos: name: Type,  (Rust-style)
         if (current.type == TOKEN_STRUCT) {
             int tokLine = current.line, tokCol = current.col;
             current = nextToken();
             std::string sName = eat(TOKEN_IDENT).value;
+            declaredStructNames.insert(sName);
             eat(TOKEN_LBRACE);
             std::vector<StructField> fields;
-            std::vector<StructMethod> methods;
             while (current.type != TOKEN_RBRACE) {
                 if (current.type == TOKEN_EOF)
                     reportError(sourceFile, tokLine, tokCol,
                                 "unterminated struct '" + sName + "' — missing '}'",
                                 getSourceLine(tokLine), (int)sName.size());
-                DataType ft = parseDataType();
-                std::string ftStructName = (ft == DataType::Custom) ? lastCustomTypeName : "";
-                std::string mName = eat(TOKEN_IDENT).value;
-                if (current.type == TOKEN_LPAREN) {
-                    current = nextToken();
-                    std::vector<ParamNode> params;
-                    while (current.type != TOKEN_RPAREN) {
-                        if (current.type == TOKEN_EOF)
-                            reportError(sourceFile, tokLine, tokCol,
-                                "unterminated parameter list for method '" + mName + "'",
-                                getSourceLine(tokLine), (int)mName.size());
-                        DataType ptype = parseDataType();
-                        std::string pStructType = (ptype == DataType::Custom) ? lastCustomTypeName : "";
-                        std::string pname = eat(TOKEN_IDENT).value;
-                        if (current.type == TOKEN_LBRACKET) {
-                            current = nextToken();
-                            if (current.type == TOKEN_INT_LIT) current = nextToken();
-                            eat(TOKEN_RBRACKET);
-                        }
-                        params.push_back({ptype, pname, pStructType});
-                        if (current.type == TOKEN_COMMA) current = nextToken();
-                    }
-                    eat(TOKEN_RPAREN);
-                    methods.push_back({ft, ftStructName, mName, std::move(params), parseBlock()});
-                } else {
-                    // Campo — não pode ser Custom (struct aninhado não suportado ainda)
-                    if (ft == DataType::Custom)
-                        reportError(sourceFile, tokLine, tokCol,
-                            "nested struct fields inside struct '" + sName + "' are not supported",
-                            getSourceLine(tokLine), (int)sName.size(),
-                            "use primitive types for struct fields: int, float, double, char, string");
-                    eat(TOKEN_SEMI);
-                    fields.push_back({ft, mName});
+
+                // Detectar método inline → erro explícito
+                if (current.type == TOKEN_FN) {
+                    std::string ln = getSourceLine(current.line);
+                    reportError(sourceFile, current.line, current.col,
+                                "methods are not allowed inside struct definitions",
+                                ln, 2,
+                                "define methods in a separate impl block:\n"
+                                "  impl " + sName + " {\n"
+                                "      fn method(&self) -> void { ... }\n"
+                                "  }");
                 }
+
+                // Campo: name: Type,
+                // Também aceita sintaxe legada `Type name;` para compatibilidade
+                if (current.type == TOKEN_IDENT) {
+                    LexerState st = saveLexerState();
+                    Token savedTok = current;
+                    std::string maybeName = current.value;
+                    current = nextToken();
+                    if (current.type == TOKEN_COLON) {
+                        // Rust-style: name: Type,
+                        current = nextToken();
+                        DataType ft = parseDataType();
+                        std::string ftStructName = (ft == DataType::Custom) ? lastCustomTypeName : "";
+                        if (current.type == TOKEN_COMMA) current = nextToken();
+                        else if (current.type == TOKEN_SEMI) current = nextToken();
+                        fields.push_back({ft, maybeName, ftStructName});
+                        continue;
+                    }
+                    // Pode ser tipo legado (ex: `Vec2 pos;`)
+                    if (current.type == TOKEN_IDENT) {
+                        std::string fieldName = current.value;
+                        current = nextToken();
+                        DataType ft = DataType::Custom;
+                        std::string ftStructName = maybeName;
+                        if (current.type == TOKEN_SEMI) current = nextToken();
+                        else if (current.type == TOKEN_COMMA) current = nextToken();
+                        fields.push_back({ft, fieldName, ftStructName});
+                        continue;
+                    }
+                    restoreLexerState(st);
+                    current = savedTok;
+                }
+
+                // Tipos primitivos em estilo legado: `int x;`
+                if (current.type == TOKEN_INT    || current.type == TOKEN_FLOAT  ||
+                    current.type == TOKEN_STRING  || current.type == TOKEN_DOUBLE ||
+                    current.type == TOKEN_LONG    || current.type == TOKEN_CHAR   ||
+                    current.type == TOKEN_BOOL    || current.type == TOKEN_VOID) {
+                    DataType ft = parseDataType();
+                    std::string ftStructName = (ft == DataType::Custom) ? lastCustomTypeName : "";
+                    std::string mName = eat(TOKEN_IDENT).value;
+                    if (current.type == TOKEN_SEMI) current = nextToken();
+                    else if (current.type == TOKEN_COMMA) current = nextToken();
+                    fields.push_back({ft, mName, ftStructName});
+                    continue;
+                }
+
+                reportError(sourceFile, current.line, current.col,
+                            "unexpected '" + current.value + "' in struct '" + sName + "'",
+                            getSourceLine(current.line), std::max(1,(int)current.value.size()),
+                            "struct fields use: name: Type,  (e.g.  x: i32,)");
             }
             eat(TOKEN_RBRACE);
             program.declarations.push_back(
-                std::make_unique<StructDefNode>(sName, std::move(fields), std::move(methods), tokLine, tokCol));
+                std::make_unique<StructDefNode>(sName, std::move(fields), std::vector<StructMethod>{}, tokLine, tokCol));
             continue;
         }
-        if (current.type == TOKEN_IDENT) {
+
+        // ── impl ──────────────────────────────────────────────────────────────
+        if (current.type == TOKEN_IMPL) {
             int tokLine = current.line, tokCol = current.col;
-            std::string typeName = current.value;
             current = nextToken();
+            parseImpl(program, tokLine, tokCol);
+            continue;
+        }
 
-            // Tipo qualificado: namespace::Struct memberName ...
-            if (current.type == TOKEN_COLONCOLON) {
-                current = nextToken();
-                std::string structPart = eat(TOKEN_IDENT).value;
-                typeName = typeName + "::" + structPart;
-                // Agora typeName = "ns::Struct" — espera memberName
-            }
+        // ── fn (função top-level) ─────────────────────────────────────────────
+        // Sintaxe: fn name(params) -> RetType { body }
+        if (current.type == TOKEN_FN) {
+            int tokLine = current.line, tokCol = current.col;
+            current = nextToken();
+            std::string name = eat(TOKEN_IDENT).value;
+            auto params = parseFnParams(name, tokLine, tokCol);
+            DataType retType = parseFnReturn();
+            std::string retStructType = (retType == DataType::Custom) ? lastCustomTypeName : "";
 
-            if (current.type == TOKEN_IDENT) {
-                std::string memberName = current.value;
-                current = nextToken();
-                // StructType funcName(...) { ... }  — função retornando struct
-                if (current.type == TOKEN_LPAREN) {
+            if (current.type == TOKEN_SEMI)
+                reportError(sourceFile, current.line, current.col,
+                            "function '" + name + "' has no body",
+                            getSourceLine(current.line), 1,
+                            "add the function body: { ... }  — "
+                            "for forward declarations, use a .nh header file");
+
+            declaredFunctionNames.insert(name);
+            // Limpa escopo de imutabilidade para cada nova função
+            immutableVars.clear();
+
+            program.declarations.push_back(
+                std::make_unique<FunctionNode>(retType, retStructType, name,
+                                               std::move(params), parseBlock()));
+            continue;
+        }
+
+        // ── Variável global: let [mut] name: Type = value; ────────────────────
+        if (current.type == TOKEN_LET) {
+            int tokLine = current.line, tokCol = current.col;
+            current = nextToken();
+            bool isMut = false;
+            if (current.type == TOKEN_MUT) { isMut = true; current = nextToken(); }
+            std::string name = eat(TOKEN_IDENT).value;
+            eat(TOKEN_COLON);
+            DataType type = parseDataType();
+            std::string customTypeName = (type == DataType::Custom) ? lastCustomTypeName : "";
+
+            if (type == DataType::Custom) {
+                // Global struct var
+                if (!isMut) immutableVars.insert(name);
+                declaredVarNames.insert(name);
+                if (current.type == TOKEN_ASSIGN) {
                     current = nextToken();
-                    std::vector<ParamNode> params;
-                    bool isVariadic = false;
-                    while (current.type != TOKEN_RPAREN) {
-                        if (current.type == TOKEN_EOF)
-                            reportError(sourceFile, tokLine, tokCol,
-                                "unterminated parameter list for function '" + memberName + "'",
-                                getSourceLine(tokLine), (int)memberName.size(),
-                                "add closing ')' and the function body");
-                        if (current.type == TOKEN_ELLIPSIS) { isVariadic = true; current = nextToken(); break; }
-                        DataType ptype = parseDataType();
-                        std::string pStructType = (ptype == DataType::Custom) ? lastCustomTypeName : "";
-                        std::string pname = eat(TOKEN_IDENT).value;
-                        if (current.type == TOKEN_LBRACKET) {
+                    if (current.type == TOKEN_IDENT) {
+                        std::string callName = current.value;
+                        current = nextToken();
+                        if (current.type == TOKEN_LPAREN) {
                             current = nextToken();
-                            if (current.type == TOKEN_INT_LIT) current = nextToken();
-                            eat(TOKEN_RBRACKET);
+                            std::vector<NodePtr> args;
+                            while (current.type != TOKEN_RPAREN) {
+                                if (current.type == TOKEN_EOF)
+                                    reportError(sourceFile, tokLine, tokCol,
+                                        "unterminated argument list for '" + callName + "()'",
+                                        getSourceLine(tokLine), (int)callName.size(), "add ')'");
+                                args.push_back(parseExpr());
+                                if (current.type == TOKEN_COMMA) current = nextToken();
+                            }
+                            eat(TOKEN_RPAREN); eat(TOKEN_SEMI);
+                            program.declarations.push_back(std::make_unique<StructVarDeclNode>(
+                                customTypeName, name, callName, std::move(args), isMut, tokLine, tokCol));
+                            continue;
                         }
-                        params.push_back({ptype, pname, pStructType});
-                        if (current.type == TOKEN_COMMA) current = nextToken();
+                        eat(TOKEN_SEMI);
+                        program.declarations.push_back(std::make_unique<StructVarDeclNode>(
+                            customTypeName, name, "@copy:" + callName,
+                            std::vector<NodePtr>{}, isMut, tokLine, tokCol));
+                        continue;
                     }
-                    eat(TOKEN_RPAREN);
-                    if (current.type == TOKEN_SEMI)
-                        reportError(sourceFile, current.line, current.col,
-                                    "function '" + memberName + "' has no body",
-                                    getSourceLine(current.line), 1,
-                                    "add the function body: { ... }");
-                    declaredFunctionNames.insert(memberName);
-                    program.declarations.push_back(
-                        std::make_unique<FunctionNode>(DataType::Custom, typeName, memberName,
-                                                       std::move(params), parseBlock(), isVariadic));
-                    continue;
                 }
-                // StructType arr[N];  — array global de struct
-                if (current.type == TOKEN_LBRACKET) {
-                    current = nextToken();
-                    if (current.type != TOKEN_INT_LIT)
-                        reportError(sourceFile, current.line, current.col,
-                            "array size must be a constant integer",
-                            getSourceLine(current.line), std::max(1,(int)current.value.size()),
-                            "example: " + typeName + " " + memberName + "[10];");
-                    int sizeLine = current.line, sizeCol = current.col;
-                    int size = safeStoi(eat(TOKEN_INT_LIT).value, sizeLine, sizeCol);
-                    if (size <= 0)
-                        reportError(sourceFile, sizeLine, sizeCol,
-                            "global array '" + memberName + "' size must be positive",
-                            getSourceLine(sizeLine), 1);
-                    eat(TOKEN_RBRACKET);
-                    eat(TOKEN_SEMI);
-                    arraySizes[memberName] = size;
-                    program.declarations.push_back(
-                        std::make_unique<ArrayDeclNode>(DataType::Custom, typeName, memberName, size,
-                                                        std::vector<NodePtr>{}, tokLine, tokCol));
-                    continue;
-                }
-                // StructType varName;  — variável global de struct
                 eat(TOKEN_SEMI);
                 program.declarations.push_back(
-                    std::make_unique<StructVarDeclNode>(typeName, memberName, tokLine, tokCol));
+                    std::make_unique<StructVarDeclNode>(customTypeName, name, isMut, tokLine, tokCol));
                 continue;
             }
-            std::string hint;
-            if (current.type == TOKEN_LPAREN)
-                hint = "to declare a function, add a return type: int " + typeName + "(...) { ... }";
-            else if (current.type == TOKEN_ASSIGN)
-                hint = "to declare a variable, add a type: int " + typeName + " = ...;";
-            reportError(sourceFile, current.line, current.col,
-                        "unexpected '" + current.value + "' after '" + typeName + "' at top level",
-                        getSourceLine(current.line), std::max(1,(int)current.value.size()), hint);
-        }
-        if (current.type == TOKEN_INT   || current.type == TOKEN_FLOAT ||
-            current.type == TOKEN_STRING || current.type == TOKEN_VOID ||
-            current.type == TOKEN_DOUBLE || current.type == TOKEN_LONG ||
-            current.type == TOKEN_CHAR   || current.type == TOKEN_IDENT) {
-            // Se é IDENT seguido de IDENT → struct var global OU função retornando struct
-            // (já tratado abaixo no bloco TOKEN_IDENT de nível superior)
-            // Aqui só entramos se for tipo primitivo
-            if (current.type == TOKEN_IDENT) goto try_top_level_ident;
-            int tokLine = current.line, tokCol = current.col;
-            DataType type = parseDataType();
-            std::string retStructType = (type == DataType::Custom) ? lastCustomTypeName : "";
-            std::string name = eat(TOKEN_IDENT).value;
-            if (current.type == TOKEN_LPAREN) {
-                current = nextToken();
-                std::vector<ParamNode> params;
-                bool isVariadic = false;
-                while (current.type != TOKEN_RPAREN) {
-                    if (current.type == TOKEN_EOF)
-                        reportError(sourceFile, tokLine, tokCol,
-                            "unterminated parameter list for function '" + name + "'",
-                            getSourceLine(tokLine), (int)name.size(),
-                            "add closing ')' and the function body");
-                    if (current.type == TOKEN_ELLIPSIS) { isVariadic = true; current = nextToken(); break; }
-                    DataType ptype = parseDataType();
-                    std::string pStructType = (ptype == DataType::Custom) ? lastCustomTypeName : "";
-                    std::string pname = eat(TOKEN_IDENT).value;
-                    if (current.type == TOKEN_LBRACKET) {
-                        current = nextToken();
-                        if (current.type == TOKEN_INT_LIT) current = nextToken();
-                        eat(TOKEN_RBRACKET);
-                    }
-                    params.push_back({ptype, pname, pStructType});
-                    if (current.type == TOKEN_COMMA) current = nextToken();
-                }
-                eat(TOKEN_RPAREN);
-                if (current.type == TOKEN_SEMI)
-                    reportError(sourceFile, current.line, current.col,
-                                "function '" + name + "' has no body",
-                                getSourceLine(current.line), 1,
-                                "add the function body: { ... }  — "
-                                "for forward declarations, use a .nh header file");
-                declaredFunctionNames.insert(name);
-                program.declarations.push_back(
-                    std::make_unique<FunctionNode>(type, retStructType, name,
-                                                   std::move(params), parseBlock(), isVariadic));
-            } else if (current.type == TOKEN_LBRACKET) {
+
+            if (current.type == TOKEN_LBRACKET) {
                 current = nextToken();
                 int sizeLine = current.line, sizeCol = current.col;
                 int size = safeStoi(eat(TOKEN_INT_LIT).value, sizeLine, sizeCol);
@@ -1514,22 +1973,53 @@ ProgramNode parseProgram(const std::string& source, const std::string& filename)
                 }
                 eat(TOKEN_SEMI);
                 arraySizes[name] = size;
+                if (!isMut) immutableVars.insert(name);
+                declaredVarNames.insert(name);
                 program.declarations.push_back(
-                    std::make_unique<ArrayDeclNode>(type, name, size, std::move(init), tokLine, tokCol));
-            } else {
-                NodePtr init = nullptr;
-                if (current.type == TOKEN_ASSIGN) { current = nextToken(); init = parseExpr(); }
-                eat(TOKEN_SEMI);
-                program.declarations.push_back(
-                    std::make_unique<VarDeclNode>(type, name, std::move(init), tokLine, tokCol));
+                    std::make_unique<ArrayDeclNode>(type, name, size, std::move(init), tokLine, tokCol, isMut));
+                continue;
             }
+
+            NodePtr init = nullptr;
+            if (current.type == TOKEN_ASSIGN) { current = nextToken(); init = parseExpr(); }
+            eat(TOKEN_SEMI);
+            if (!isMut) immutableVars.insert(name);
+            declaredVarNames.insert(name);
+            program.declarations.push_back(
+                std::make_unique<VarDeclNode>(type, name, std::move(init), isMut, tokLine, tokCol));
             continue;
         }
+
+        // ── namespace (apenas em top-level, para compatibilidade) ────────────
+        if (current.type == TOKEN_NAMESPACE) {
+            current = nextToken();
+            // Ignorado a nível de AST — usado só em headers .nh
+            if (current.type == TOKEN_IDENT) current = nextToken();
+            if (current.type == TOKEN_SEMI)  current = nextToken();
+            continue;
+        }
+
+        // ── Tipos primitivos no top-level são ERRO — obriga uso de fn ──────────
+        if (current.type == TOKEN_INT    || current.type == TOKEN_FLOAT  ||
+            current.type == TOKEN_STRING || current.type == TOKEN_VOID   ||
+            current.type == TOKEN_DOUBLE || current.type == TOKEN_LONG   ||
+            current.type == TOKEN_CHAR   || current.type == TOKEN_BOOL) {
+            std::string typeName = current.value;
+            int tl = current.line, tc = current.col;
+            current = nextToken();
+            std::string name = (current.type == TOKEN_IDENT) ? current.value : "name";
+            std::string ln = getSourceLine(tl);
+            reportError(sourceFile, tl, tc,
+                "function declarations require the 'fn' keyword",
+                ln, (int)typeName.size(),
+                "use: fn " + name + "(params) -> " + typeName + " { ... }");
+        }
+
+        // ── Erro top-level ────────────────────────────────────────────────────
         {
-            try_top_level_ident:
             std::string hint = didYouMean(current.value, declaredFunctionNames);
             if (hint.empty())
-                hint = "top-level code must be a function, variable, or struct declaration";
+                hint = "top-level declarations must be: fn, struct, impl, let, or #include";
             reportError(sourceFile, current.line, current.col,
                         "unexpected '" + current.value + "' at top level",
                         getSourceLine(current.line), std::max(1,(int)current.value.size()), hint);

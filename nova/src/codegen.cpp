@@ -247,15 +247,21 @@ static Value* getStructPtrValue(const std::string& varName, std::string& outType
 }
 
 // Copia todos os campos de srcPtr para dstPtr (struct do tipo typeName)
+// Suporta campos nested struct recursivamente.
 static void copyStruct(Value* dstPtr, Value* srcPtr, const std::string& typeName) {
     StructType* st = structTypes[typeName];
     auto& fields = structFields[typeName];
     for (int i = 0; i < (int)fields.size(); i++) {
-        Type* ft = llvmType(fields[i].type);
         Value* srcGep = builder.CreateStructGEP(st, srcPtr, i, "src." + fields[i].name);
-        Value* val    = builder.CreateLoad(ft, srcGep, fields[i].name);
         Value* dstGep = builder.CreateStructGEP(st, dstPtr, i, "dst." + fields[i].name);
-        builder.CreateStore(val, dstGep);
+        if (fields[i].type == DataType::Custom && !fields[i].structTypeName.empty()) {
+            // Campo nested struct — copia recursivamente
+            copyStruct(dstGep, srcGep, fields[i].structTypeName);
+        } else {
+            Type* ft = llvmType(fields[i].type);
+            Value* val = builder.CreateLoad(ft, srcGep, fields[i].name);
+            builder.CreateStore(val, dstGep);
+        }
     }
 }
 
@@ -779,6 +785,66 @@ static Function* getOrBuildNovaPrintf() {
     return fn;
 }
 
+// Resolve um nome possivelmente encadeado (ex: "L.start" ou "L.start.inner")
+// para o ponteiro do struct e seu tipo, navegando pelos campos via GEP.
+// Retorna {ponteiro, typeName} do struct final, ou {nullptr, ""} se não encontrado.
+static std::pair<Value*, std::string> resolveNestedStructPtr(const std::string& varName, int line, int col) {
+    // Divide o nome pelos '.'
+    std::vector<std::string> parts;
+    {
+        std::string cur;
+        for (char c : varName) {
+            if (c == '.') { if (!cur.empty()) parts.push_back(cur); cur.clear(); }
+            else cur += c;
+        }
+        if (!cur.empty()) parts.push_back(cur);
+    }
+
+    if (parts.empty()) return std::make_pair((Value*)nullptr, std::string(""));
+
+    // Resolve a raiz (primeiro componente)
+    Value* ptr = nullptr;
+    std::string typeName;
+    {
+        auto lit = localStructs.find(parts[0]);
+        if (lit != localStructs.end()) {
+            ptr      = lit->second.first;
+            typeName = lit->second.second;
+        } else {
+            auto git = globalStructs.find(parts[0]);
+            if (git != globalStructs.end()) {
+                ptr      = git->second.first;
+                typeName = git->second.second;
+            }
+        }
+    }
+    if (!ptr) return std::make_pair((Value*)nullptr, std::string(""));
+
+    // Navega pelos componentes restantes via GEP
+    for (size_t i = 1; i < parts.size(); i++) {
+        const std::string& fieldName = parts[i];
+        auto fit = structFields.find(typeName);
+        if (fit == structFields.end()) return std::make_pair((Value*)nullptr, std::string(""));
+        auto& fields = fit->second;
+        int idx = -1;
+        for (int fi = 0; fi < (int)fields.size(); fi++)
+            if (fields[fi].name == fieldName) { idx = fi; break; }
+        if (idx < 0) return std::make_pair((Value*)nullptr, std::string(""));
+
+        StructType* st = structTypes[typeName];
+        ptr = builder.CreateStructGEP(st, ptr, idx, fieldName);
+
+        if (fields[idx].type == DataType::Custom && !fields[idx].structTypeName.empty()) {
+            typeName = fields[idx].structTypeName;
+        } else {
+            // Chegamos num campo primitivo — só faz sentido se for o último componente
+            if (i + 1 < parts.size()) return std::make_pair((Value*)nullptr, std::string(""));
+            return std::make_pair(ptr, std::string(""));
+        }
+    }
+    return std::make_pair(ptr, typeName);
+}
+
 static Value* codegenExpr(const ASTNode* node) {
     if (auto* n = dynamic_cast<const IntLitNode*>(node))
         return ConstantInt::get(Type::getInt32Ty(ctx), n->value);
@@ -802,10 +868,19 @@ static Value* codegenExpr(const ASTNode* node) {
         return ConstantInt::get(Type::getInt8Ty(ctx), (unsigned char)n->value);
 
     // Busca local primeiro, depois global
+    // Busca local primeiro, depois global
     if (auto* n = dynamic_cast<const VarNode*>(node)) {
+        // Array local passado como argumento: retorna ponteiro para o primeiro elemento
+        auto arrIt = localArrays.find(n->name);
+        if (arrIt != localArrays.end()) {
+            Type* arrType = arrIt->second.second;
+            Value* arrPtr = arrIt->second.first;
+            return builder.CreateGEP(arrType, arrPtr,
+                {ConstantInt::get(Type::getInt32Ty(ctx), 0),
+                 ConstantInt::get(Type::getInt32Ty(ctx), 0)}, n->name + ".ptr");
+        }
         auto localIt = localValues.find(n->name);
         if (localIt != localValues.end()) {
-            // Marca variável como usada
             auto usageIt = localVarUsage.find(n->name);
             if (usageIt != localVarUsage.end()) usageIt->second.used = true;
             AllocaInst* alloca = localIt->second;
@@ -816,6 +891,18 @@ static Value* codegenExpr(const ASTNode* node) {
             GlobalVariable* gv = globalIt->second;
             return builder.CreateLoad(gv->getValueType(), gv, n->name);
         }
+        // Tenta também sem namespace: "geo::PI" → "PI"
+        {
+            auto sep = n->name.rfind("::");
+            if (sep != std::string::npos) {
+                std::string shortName = n->name.substr(sep + 2);
+                auto shortIt = globalValues.find(shortName);
+                if (shortIt != globalValues.end()) {
+                    GlobalVariable* gv = shortIt->second;
+                    return builder.CreateLoad(gv->getValueType(), gv, shortName);
+                }
+            }
+        }
         reportError(sourceFile, n->line, n->col,
                     "The variable '" + n->name + "' was not declared in this scope",
                     getSourceLine(n->line), (int)n->name.size());
@@ -823,6 +910,30 @@ static Value* codegenExpr(const ASTNode* node) {
     }
 
     if (auto* n = dynamic_cast<const UnaryOpNode*>(node)) {
+        // '&' / '&mut' geram um ponteiro bruto como inteiro (i64).
+        if (n->op == "&" || n->op == "&mut") {
+            if (auto* varNode = dynamic_cast<const VarNode*>(n->operand.get())) {
+                Value* ptr = nullptr;
+                auto localIt = localValues.find(varNode->name);
+                if (localIt != localValues.end()) ptr = localIt->second;
+                else {
+                    auto globalIt = globalValues.find(varNode->name);
+                    if (globalIt != globalValues.end()) ptr = globalIt->second;
+                }
+                
+                if (ptr)
+                    return builder.CreatePtrToInt(ptr, Type::getInt64Ty(ctx), "addrof");
+                reportError(sourceFile, n->line, n->col,
+                            "cannot take address of undeclared variable '" + varNode->name + "'",
+                            getSourceLine(n->line), (int)varNode->name.size());
+                return nullptr;
+            } else {
+                reportError(sourceFile, n->line, n->col,
+                            "invalid borrow: must borrow a variable",
+                            getSourceLine(n->line), 1);
+                return nullptr;
+            }
+        }
         Value* val = codegenExpr(n->operand.get());
         // Converte para i1: val != 0
         Value* asBool = val->getType()->isFloatTy()
@@ -953,6 +1064,31 @@ static Value* codegenExpr(const ASTNode* node) {
 
         reportError(sourceFile, 0, 0, "The operator '" + n->op + "' is not supported", "");
         return nullptr;
+    }
+    if (auto* n = dynamic_cast<const DerefNode*>(node)) {
+        Value* raw = codegenExpr(n->operand.get());
+        if (!raw) return nullptr;
+
+        Type* targetType = llvmType(n->type);
+        Type* targetPtrTy = PointerType::getUnqual(targetType);
+        Value* ptr = nullptr;
+
+        // Caso comum atual da linguagem: '&x' vira i64 (endereco bruto).
+        if (raw->getType()->isIntegerTy(64)) {
+            ptr = builder.CreateIntToPtr(raw, targetPtrTy, "deref_ptr");
+        } else if (raw->getType()->isPointerTy()) {
+            ptr = raw;
+            if (ptr->getType() != targetPtrTy)
+                ptr = builder.CreateBitCast(ptr, targetPtrTy, "deref_cast");
+        } else {
+            reportError(sourceFile, n->line, n->col,
+                        "cannot dereference a non-pointer value",
+                        getSourceLine(n->line), 1,
+                        "use '&value' to create a pointer before using '*'");
+            return nullptr;
+        }
+
+        return builder.CreateLoad(targetType, ptr, "deref_tmp");
     }
 
     if (auto* n = dynamic_cast<const CallNode*>(node)) {
@@ -1094,27 +1230,29 @@ static Value* codegenExpr(const ASTNode* node) {
     }
 
     if (auto* n = dynamic_cast<const FieldAccessNode*>(node)) {
-        // local struct first
-        auto lit = localStructs.find(n->varName);
-        if (lit != localStructs.end()) {
-            const std::string& typeName = lit->second.second;
-            int idx = getFieldIndex(typeName, n->fieldName, n->line, n->col);
-            StructType* st = structTypes[typeName];
-            Value* gep = builder.CreateStructGEP(st, lit->second.first, idx, n->fieldName);
-            return builder.CreateLoad(st->getElementType(idx), gep, n->fieldName);
+        // Resolve o varName (pode ser "p", "p.inner", "p.a.b", etc.)
+        auto [structPtr, typeName] = resolveNestedStructPtr(n->varName, n->line, n->col);
+        if (!structPtr)
+            reportError(sourceFile, n->line, n->col,
+                        "variable '" + n->varName + "' was not declared in this scope",
+                        getSourceLine(n->line), (int)n->varName.size());
+
+        int idx = getFieldIndex(typeName, n->fieldName, n->line, n->col);
+        StructType* st = structTypes[typeName];
+        Value* gep = builder.CreateStructGEP(st, structPtr, idx, n->fieldName);
+
+        // Se o campo é um struct aninhado, retorna o ponteiro (não carrega)
+        // para que acessos encadeados adicionais funcionem via resolveNestedStructPtr
+        auto& fields = structFields[typeName];
+        if (fields[idx].type == DataType::Custom && !fields[idx].structTypeName.empty()) {
+            // Registra também em localStructs para compatibilidade com outros caminhos
+            std::string nestedKey = n->varName + "." + n->fieldName;
+            localStructs[nestedKey] = std::make_pair(static_cast<AllocaInst*>(gep), fields[idx].structTypeName);
+            return gep;
         }
-        auto git = globalStructs.find(n->varName);
-        if (git != globalStructs.end()) {
-            const std::string& typeName = git->second.second;
-            int idx = getFieldIndex(typeName, n->fieldName, n->line, n->col);
-            StructType* st = structTypes[typeName];
-            Value* gep = builder.CreateStructGEP(st, git->second.first, idx, n->fieldName);
-            return builder.CreateLoad(st->getElementType(idx), gep, n->fieldName);
-        }
-        reportError(sourceFile, n->line, n->col,
-                    "variable '" + n->varName + "' was not declared in this scope",
-                    getSourceLine(n->line), (int)n->varName.size());
-        return nullptr;
+
+        Type* elemType = st->getElementType(idx);
+        return builder.CreateLoad(elemType, gep, n->fieldName);
     }
 
     if (auto* n = dynamic_cast<const MethodCallNode*>(node)) {
@@ -1260,7 +1398,7 @@ static void codegenStmt(const ASTNode* node, Function* fn) {
                         getSourceLine(n->line), (int)n->typeName.size());
         StructType* st = it->second;
         AllocaInst* alloca = createEntryAlloca(fn, n->varName, st);
-        localStructs[n->varName] = {alloca, n->typeName};
+        localStructs[n->varName] = std::make_pair(alloca, n->typeName);
 
         if (!n->initFuncName.empty()) {
             // Point p = @copy:outraVar  — cópia de struct
@@ -1273,6 +1411,51 @@ static void codegenStmt(const ASTNode* node, Function* fn) {
                                 "struct variable '" + srcName + "' was not declared in this scope",
                                 getSourceLine(n->line), (int)srcName.size());
                 copyStruct(alloca, srcPtr, n->typeName);
+            } else if (n->initFuncName.substr(0, 9) == "@literal:") {
+                // let mut p: Point = { x: 1, y: 2 }  — inicialização literal por campo
+                // initFuncName = "@literal:x,y"  initFuncArgs = [expr_x, expr_y]
+                std::string fieldList = n->initFuncName.substr(9);
+                // Divide os nomes de campos pelo ','
+                std::vector<std::string> fieldNames;
+                {
+                    std::string cur;
+                    for (char c : fieldList) {
+                        if (c == ',') { if (!cur.empty()) fieldNames.push_back(cur); cur.clear(); }
+                        else cur += c;
+                    }
+                    if (!cur.empty()) fieldNames.push_back(cur);
+                }
+                auto& fields = structFields[n->typeName];
+                for (int i = 0; i < (int)fieldNames.size(); i++) {
+                    if (i >= (int)n->initFuncArgs.size()) break;
+                    // Acha o índice do campo no struct
+                    int fi = -1;
+                    for (int k = 0; k < (int)fields.size(); k++)
+                        if (fields[k].name == fieldNames[i]) { fi = k; break; }
+                    if (fi < 0)
+                        reportError(sourceFile, n->line, n->col,
+                                    "struct '" + n->typeName + "' has no field '" + fieldNames[i] + "'",
+                                    getSourceLine(n->line), (int)fieldNames[i].size());
+                    Value* val = codegenExpr(n->initFuncArgs[i].get());
+                    Value* gep = builder.CreateStructGEP(st, alloca, fi, fieldNames[i]);
+                    Type* fieldType = st->getElementType(fi);
+                    // Coerção automática de tipo
+                    if (val->getType() != fieldType) {
+                        if (val->getType()->isIntegerTy() && fieldType->isFloatingPointTy())
+                            val = builder.CreateSIToFP(val, fieldType, "coerce");
+                        else if (val->getType()->isFloatTy() && fieldType->isDoubleTy())
+                            val = builder.CreateFPExt(val, fieldType, "coerce");
+                        else if (val->getType()->isDoubleTy() && fieldType->isFloatTy())
+                            val = builder.CreateFPTrunc(val, fieldType, "coerce");
+                        else if (val->getType()->isIntegerTy() && fieldType->isIntegerTy()) {
+                            if (val->getType()->getIntegerBitWidth() > fieldType->getIntegerBitWidth())
+                                val = builder.CreateTrunc(val, fieldType, "trunc");
+                            else
+                                val = builder.CreateSExt(val, fieldType, "sext");
+                        }
+                    }
+                    builder.CreateStore(val, gep);
+                }
             } else {
                 // Point p = func(args...)  — função retornando struct
                 std::vector<Value*> args;
@@ -1316,30 +1499,38 @@ static void codegenStmt(const ASTNode* node, Function* fn) {
         return;
     }
 
-    // ── Atribuição de campo: p.x = expr; ─────────────────────────────────
+    // ── Atribuição de campo: p.x = expr;  ou  p.inner.x = expr; ─────────────
     if (auto* n = dynamic_cast<const FieldAssignNode*>(node)) {
         Value* val = codegenExpr(n->value.get());
-        auto lit = localStructs.find(n->varName);
-        if (lit != localStructs.end()) {
-            const std::string& typeName = lit->second.second;
-            int idx = getFieldIndex(typeName, n->fieldName, n->line, n->col);
-            StructType* st = structTypes[typeName];
-            Value* gep = builder.CreateStructGEP(st, lit->second.first, idx, n->fieldName);
-            builder.CreateStore(val, gep);
-            return;
+
+        // Resolve o varName (pode ser "p" ou "p.inner" ou "p.a.b")
+        auto [structPtr, typeName] = resolveNestedStructPtr(n->varName, n->line, n->col);
+        if (!structPtr)
+            reportError(sourceFile, n->line, n->col,
+                        "variable '" + n->varName + "' was not declared in this scope",
+                        getSourceLine(n->line), (int)n->varName.size());
+
+        int idx = getFieldIndex(typeName, n->fieldName, n->line, n->col);
+        StructType* st = structTypes[typeName];
+        Value* gep = builder.CreateStructGEP(st, structPtr, idx, n->fieldName);
+
+        // Coerção de tipo automática
+        Type* fieldType = st->getElementType(idx);
+        if (val->getType() != fieldType) {
+            if (val->getType()->isIntegerTy() && fieldType->isFloatingPointTy())
+                val = builder.CreateSIToFP(val, fieldType, "coerce");
+            else if (val->getType()->isFloatTy() && fieldType->isDoubleTy())
+                val = builder.CreateFPExt(val, fieldType, "coerce");
+            else if (val->getType()->isDoubleTy() && fieldType->isFloatTy())
+                val = builder.CreateFPTrunc(val, fieldType, "coerce");
+            else if (val->getType()->isIntegerTy() && fieldType->isIntegerTy()) {
+                if (val->getType()->getIntegerBitWidth() > fieldType->getIntegerBitWidth())
+                    val = builder.CreateTrunc(val, fieldType, "trunc");
+                else
+                    val = builder.CreateSExt(val, fieldType, "sext");
+            }
         }
-        auto git = globalStructs.find(n->varName);
-        if (git != globalStructs.end()) {
-            const std::string& typeName = git->second.second;
-            int idx = getFieldIndex(typeName, n->fieldName, n->line, n->col);
-            StructType* st = structTypes[typeName];
-            Value* gep = builder.CreateStructGEP(st, git->second.first, idx, n->fieldName);
-            builder.CreateStore(val, gep);
-            return;
-        }
-        reportError(sourceFile, n->line, n->col,
-                    "variable '" + n->varName + "' was not declared in this scope",
-                    getSourceLine(n->line), (int)n->varName.size());
+        builder.CreateStore(val, gep);
         return;
     }
 
@@ -1538,6 +1729,59 @@ static void codegenStmt(const ASTNode* node, Function* fn) {
         return;
     }
 
+    if (auto* n = dynamic_cast<const DerefAssignNode*>(node)) {
+        // n->target é um DerefNode (*p). Precisamos do endereço bruto (p como i64),
+        // não do valor desreferenciado — então avaliamos o operando interno diretamente.
+        Value* rawTarget = nullptr;
+        if (auto* dn = dynamic_cast<const DerefNode*>(n->target.get())) {
+            rawTarget = codegenExpr(dn->operand.get());
+        } else {
+            rawTarget = codegenExpr(n->target.get());
+        }
+        Value* val = codegenExpr(n->value.get());
+        if (!rawTarget || !val) return;
+
+        Type* targetType = llvmType(n->targetType);
+        Type* targetPtrTy = PointerType::getUnqual(targetType);
+        Value* ptr = nullptr;
+
+        if (rawTarget->getType()->isIntegerTy(64)) {
+            ptr = builder.CreateIntToPtr(rawTarget, targetPtrTy, "deref_store_ptr");
+        } else if (rawTarget->getType()->isIntegerTy(32)) {
+            // i32 guardado como endereço (ex: parâmetro &mut i32 em função com i32 param)
+            Value* ext = builder.CreateSExt(rawTarget, Type::getInt64Ty(ctx), "addr_ext");
+            ptr = builder.CreateIntToPtr(ext, targetPtrTy, "deref_store_ptr");
+        } else if (rawTarget->getType()->isPointerTy()) {
+            ptr = rawTarget;
+            if (ptr->getType() != targetPtrTy)
+                ptr = builder.CreateBitCast(ptr, targetPtrTy, "deref_store_cast");
+        } else {
+            reportError(sourceFile, n->line, n->col,
+                        "cannot assign through a non-pointer value",
+                        getSourceLine(n->line), 1,
+                        "use '&value' to create a pointer before '*ptr = ...'");
+            return;
+        }
+
+        if (val->getType() != targetType) {
+            if (val->getType()->isIntegerTy() && targetType->isIntegerTy()) {
+                unsigned srcBits = val->getType()->getIntegerBitWidth();
+                unsigned dstBits = targetType->getIntegerBitWidth();
+                if (srcBits > dstBits) val = builder.CreateTrunc(val, targetType, "deref_trunc");
+                else if (srcBits < dstBits) val = builder.CreateSExt(val, targetType, "deref_sext");
+            } else if (val->getType()->isIntegerTy() && targetType->isFloatingPointTy()) {
+                val = builder.CreateSIToFP(val, targetType, "deref_to_fp");
+            } else if (val->getType()->isDoubleTy() && targetType->isFloatTy()) {
+                val = builder.CreateFPTrunc(val, targetType, "deref_fp_trunc");
+            } else if (val->getType()->isFloatTy() && targetType->isDoubleTy()) {
+                val = builder.CreateFPExt(val, targetType, "deref_fp_ext");
+            }
+        }
+
+        builder.CreateStore(val, ptr);
+        return;
+    }
+
     if (auto* n = dynamic_cast<const VarAssignNode*>(node)) {
         // Resolve o alloca/global da variável (local tem prioridade)
         AllocaInst*     localAlloca = nullptr;
@@ -1676,11 +1920,24 @@ static void codegenStmt(const ASTNode* node, Function* fn) {
                     getSourceLine(n->line), (int)n->name.size());
 
             Value* val = codegenExpr(n->init.get());
-            // Ajusta precisão: literal é sempre double — converte para o tipo da variável
-            if (val->getType()->isDoubleTy() && type->isFloatTy())
-                val = builder.CreateFPTrunc(val, Type::getFloatTy(ctx), "to_float");
-            else if (val->getType()->isFloatTy() && type->isDoubleTy())
-                val = builder.CreateFPExt(val, Type::getDoubleTy(ctx), "to_double");
+            
+            // ── CORREÇÃO: Harmonização completa de tipos no VarDeclNode ──
+            if (val->getType() != type) {
+                if (val->getType()->isIntegerTy() && type->isIntegerTy()) {
+                    unsigned srcBits = val->getType()->getIntegerBitWidth();
+                    unsigned dstBits = type->getIntegerBitWidth();
+                    if (srcBits > dstBits)
+                        val = builder.CreateTrunc(val, type, "trunc");
+                    else
+                        val = builder.CreateSExt(val, type, "sext");
+                } else if (val->getType()->isDoubleTy() && type->isFloatTy()) {
+                    val = builder.CreateFPTrunc(val, type, "to_float");
+                } else if (val->getType()->isFloatTy() && type->isDoubleTy()) {
+                    val = builder.CreateFPExt(val, type, "to_double");
+                }
+            }
+            // ─────────────────────────────────────────────────────────────
+            
             builder.CreateStore(val, alloca);
         }
         return;
@@ -1941,10 +2198,12 @@ static void codegenFunction(const FunctionNode* fn) {
         paramTypes.push_back(PointerType::getUnqual(ctx)); // sret
     }
 
-    // Parâmetros normais — struct params são passados por ponteiro
+    // Parâmetros normais — struct e array params são passados por ponteiro
     for (auto& p : fn->params) {
         if (p.type == DataType::Custom && !p.structTypeName.empty()) {
             paramTypes.push_back(PointerType::getUnqual(ctx)); // struct por ponteiro
+        } else if (p.name.substr(0, 7) == "__arr__") {
+            paramTypes.push_back(PointerType::getUnqual(ctx)); // array por ponteiro
         } else {
             paramTypes.push_back(llvmType(p.type));
         }
@@ -2035,16 +2294,30 @@ static void codegenFunction(const FunctionNode* fn) {
                     reportError(sourceFile, 0, 0,
                                 "struct type '" + p.structTypeName + "' was not declared", "");
                 AllocaInst* alloca = createEntryAlloca(func, p.name, st);
-                // Copia o struct passado por ponteiro para a alloca local
-                auto& fields = structFields[p.structTypeName];
-                for (int fi = 0; fi < (int)fields.size(); fi++) {
-                    Type* ft2 = llvmType(fields[fi].type);
-                    Value* srcGep = builder.CreateStructGEP(st, &arg, fi, "arg." + fields[fi].name);
-                    Value* val    = builder.CreateLoad(ft2, srcGep, fields[fi].name);
-                    Value* dstGep = builder.CreateStructGEP(st, alloca, fi, "local." + fields[fi].name);
+                // Copia o struct passado por ponteiro para a alloca local (recursivo para nested)
+                copyStruct(alloca, &arg, p.structTypeName);
+                localStructs[p.name] = std::make_pair(alloca, p.structTypeName);
+            } else if (p.name.substr(0, 7) == "__arr__") {
+                // Parâmetro de array: "__arr__N__realName"
+                // Decodifica tamanho e nome real, recria alloca de ArrayType e copia do ponteiro
+                std::string encoded = p.name.substr(7); // remove "__arr__"
+                auto sep = encoded.find("__");
+                int arrSize = (sep != std::string::npos) ? std::stoi(encoded.substr(0, sep)) : 0;
+                std::string realName = (sep != std::string::npos) ? encoded.substr(sep + 2) : encoded;
+                Type* elemType = llvmType(p.type);
+                ArrayType* arrType = ArrayType::get(elemType, arrSize);
+                AllocaInst* alloca = createEntryAlloca(func, realName, arrType);
+                // arg é ponteiro para o primeiro elemento — copia cada elemento
+                for (int ei = 0; ei < arrSize; ei++) {
+                    Value* srcGep = builder.CreateGEP(elemType, &arg,
+                        ConstantInt::get(Type::getInt32Ty(ctx), ei), "src." + std::to_string(ei));
+                    Value* dstGep = builder.CreateGEP(arrType, alloca,
+                        {ConstantInt::get(Type::getInt32Ty(ctx), 0),
+                         ConstantInt::get(Type::getInt32Ty(ctx), ei)}, "dst." + std::to_string(ei));
+                    Value* val = builder.CreateLoad(elemType, srcGep);
                     builder.CreateStore(val, dstGep);
                 }
-                localStructs[p.name] = {alloca, p.structTypeName};
+                localArrays[realName] = {alloca, arrType};
             } else {
                 AllocaInst* alloca = createEntryAlloca(func, std::string(arg.getName()), arg.getType());
                 builder.CreateStore(&arg, alloca);
@@ -2111,7 +2384,6 @@ static void codegenGlobalVar(const VarDeclNode* node) {
             init = ConstantFP::get(type, apVal);
         }
         else if (auto* n = dynamic_cast<const StringLitNode*>(node->init.get())) {
-            // String global: cria uma constante de string e armazena o ponteiro
             Constant* strConst = ConstantDataArray::getString(ctx, n->value, true);
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmismatched-new-delete"
@@ -2126,18 +2398,53 @@ static void codegenGlobalVar(const VarDeclNode* node) {
             reportError(sourceFile, node->line, node->col,
                        "global variable '" + node->name + "' can only be initialized with a literal — expressions are not allowed in global scope",
                         getSourceLine(node->line), (int)node->name.size());
-    } else {
-        init = Constant::getNullValue(type);
+    }
+
+    // Resolução de nomes para globais:
+    // - Para "ns::X": mantemos compatibilidade com a implementação stdlib existente,
+    //   mapeando para o símbolo LLVM "X" (strip do namespace).
+    // - Para "X" (sem ::) definido fora da stdlib: evitamos colisão com o símbolo
+    //   "X" que a stdlib define (ex: math.npp define "PI"). Então geramos um
+    //   símbolo LLVM mangled apenas quando é definição (node->init != nullptr).
+    std::string llvmSymbol = node->name;
+    {
+        auto sep = node->name.rfind("::");
+        if (sep != std::string::npos) {
+            llvmSymbol = node->name.substr(sep + 2);
+        } else {
+            const char* ev = std::getenv("NOVA_STDLIB_PATH");
+            bool isStdlib = sourceFile.find("/usr/local/lib/nova") != std::string::npos ||
+                            (ev && sourceFile.find(ev) != std::string::npos);
+            bool isDefinition = (node->init != nullptr);
+            if (!isStdlib && isDefinition) {
+                llvmSymbol = "user__" + node->name;
+            }
+        }
+    }
+
+    // Se o símbolo já existe no módulo (criado como extern pelo .nh antes),
+    // e agora temos um init real (definição do .npp), apenas atualiza o initializer.
+    GlobalVariable* gv = llvmModule->getGlobalVariable(llvmSymbol);
+    if (gv) {
+        if (init && !gv->hasInitializer()) {
+            // Promove de extern para definição com valor
+            gv->setInitializer(init);
+        }
+        // Já registrado — só garante que os dois nomes apontam para ele
+        globalValues[node->name] = gv;
+        globalValues[llvmSymbol] = gv;
+        return;
     }
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmismatched-new-delete"
-    auto* gv = new GlobalVariable(*llvmModule, type, false,
-                                   GlobalValue::ExternalLinkage, init, node->name);
+    gv = new GlobalVariable(*llvmModule, type, false,
+                             GlobalValue::ExternalLinkage, init, llvmSymbol);
 #pragma GCC diagnostic pop
-    globalValues[node->name] = gv;
-}
 
+    globalValues[node->name] = gv;
+    globalValues[llvmSymbol] = gv;
+}
 
 static void codegenGlobalArray(const ArrayDeclNode* node) {
     // Array global de struct
@@ -2241,8 +2548,18 @@ void codegenProgram(const ProgramNode& program, const std::string& outputFile,
     for (auto& decl : program.declarations) {
         if (auto* sd = dynamic_cast<const StructDefNode*>(decl.get())) {
             std::vector<Type*> fieldTypes;
-            for (auto& f : sd->fields)
-                fieldTypes.push_back(llvmType(f.type));
+            for (auto& f : sd->fields) {
+                if (f.type == DataType::Custom && !f.structTypeName.empty()) {
+                    // Campo nested struct — usa StructType* real (inline, não ponteiro genérico)
+                    auto sit = structTypes.find(f.structTypeName);
+                    if (sit != structTypes.end())
+                        fieldTypes.push_back(sit->second);
+                    else
+                        fieldTypes.push_back(PointerType::getUnqual(ctx)); // fallback
+                } else {
+                    fieldTypes.push_back(llvmType(f.type));
+                }
+            }
             StructType* st = StructType::create(ctx, fieldTypes, sd->name);
             structTypes[sd->name] = st;
             structFields[sd->name] = sd->fields;
@@ -2291,6 +2608,8 @@ void codegenProgram(const ProgramNode& program, const std::string& outputFile,
             for (auto& p : fn->params) {
                 if (p.type == DataType::Custom && !p.structTypeName.empty())
                     paramTypes.push_back(PointerType::getUnqual(ctx));
+                else if (p.name.substr(0, 7) == "__arr__")
+                    paramTypes.push_back(PointerType::getUnqual(ctx)); // array passa por ponteiro
                 else
                     paramTypes.push_back(llvmType(p.type));
             }
@@ -2530,6 +2849,9 @@ void codegenProgram(const ProgramNode& program, const std::string& outputFile,
 
                 // self é ponteiro para o struct — expõe campos como variáveis locais via GEP
                 Value* selfPtr = func->arg_begin();
+
+                // Registra "self" em localStructs para que self.field funcione dentro do método
+                localStructs["self"] = {static_cast<AllocaInst*>(selfPtr), sd->name};
                 auto& fields = structFields[sd->name];
                 for (int fi = 0; fi < (int)fields.size(); fi++) {
                     Value* gep = builder.CreateStructGEP(st, selfPtr, fi, fields[fi].name);
