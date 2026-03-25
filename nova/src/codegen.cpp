@@ -92,8 +92,8 @@ static std::map<std::string, std::pair<GlobalVariable*, Type*>> globalArrays;
 static std::map<std::string, StructType*> structTypes;
 // Structs: nome do tipo -> lista de campos (para calcular índice)
 static std::map<std::string, std::vector<StructField>> structFields;
-// Variáveis locais do tipo struct: nome -> AllocaInst*
-static std::map<std::string, std::pair<AllocaInst*, std::string>> localStructs; // varName -> (alloca, typeName)
+// Variáveis locais do tipo struct: nome -> Value* (pode ser alloca ou ponteiro bruto)
+static std::map<std::string, std::pair<Value*, std::string>> localStructs; // varName -> (ptr, typeName)
 // Variáveis globais do tipo struct: nome -> (GlobalVariable*, typeName)
 static std::map<std::string, std::pair<GlobalVariable*, std::string>> globalStructs;
 
@@ -231,7 +231,7 @@ static AllocaInst* createEntryAlloca(Function* fn, const std::string& name, Type
 
 static int getFieldIndex(const std::string& typeName, const std::string& fieldName, int line, int col);
 
-// Retorna ponteiro (Value*) para o struct (local AllocaInst* ou global GlobalVariable*)
+// Retorna ponteiro (Value*) para o struct (local ou global)
 static Value* getStructPtrValue(const std::string& varName, std::string& outTypeName) {
     auto lit = localStructs.find(varName);
     if (lit != localStructs.end()) {
@@ -268,12 +268,12 @@ static void copyStruct(Value* dstPtr, Value* srcPtr, const std::string& typeName
 // Chama uma função que retorna struct usando convenção sret:
 //   - Aloca espaço local para o resultado
 //   - Passa o ponteiro como primeiro argumento (sret)
-//   - Retorna o AllocaInst* com o resultado
-static AllocaInst* callStructReturningFunc(Function* parentFn,
-                                            const std::string& funcName,
-                                            const std::string& structTypeName,
-                                            std::vector<Value*>& userArgs,
-                                            int line, int col) {
+//   - Retorna o Value* (alloca) com o resultado
+static Value* callStructReturningFunc(Function* parentFn,
+                                       const std::string& funcName,
+                                       const std::string& structTypeName,
+                                       std::vector<Value*>& userArgs,
+                                       int line, int col) {
     std::string llvmFuncName = funcName;
     // Tenta resolver overload
     auto oit = overloadTable.find(funcName);
@@ -293,7 +293,7 @@ static AllocaInst* callStructReturningFunc(Function* parentFn,
                     getSourceLine(line), (int)structTypeName.size());
 
     // Aloca espaço para o resultado
-    AllocaInst* resultAlloca = createEntryAlloca(parentFn, "sret." + funcName, st);
+    Value* resultAlloca = createEntryAlloca(parentFn, "sret." + funcName, st);
 
     // Monta args: sret pointer primeiro, depois user args
     std::vector<Value*> callArgs;
@@ -1247,7 +1247,7 @@ static Value* codegenExpr(const ASTNode* node) {
         if (fields[idx].type == DataType::Custom && !fields[idx].structTypeName.empty()) {
             // Registra também em localStructs para compatibilidade com outros caminhos
             std::string nestedKey = n->varName + "." + n->fieldName;
-            localStructs[nestedKey] = std::make_pair(static_cast<AllocaInst*>(gep), fields[idx].structTypeName);
+            localStructs[nestedKey] = std::make_pair(gep, fields[idx].structTypeName);
             return gep;
         }
 
@@ -1461,7 +1461,7 @@ static void codegenStmt(const ASTNode* node, Function* fn) {
                 std::vector<Value*> args;
                 for (int i = 0; i < (int)n->initFuncArgs.size(); i++)
                     args.push_back(resolveCallArg(n->initFuncArgs[i].get(), n->initFuncName, i, n->line, n->col));
-                AllocaInst* result = callStructReturningFunc(
+                Value* result = callStructReturningFunc(
                     fn, n->initFuncName, n->typeName, args, n->line, n->col);
                 copyStruct(alloca, result, n->typeName);
             }
@@ -1492,7 +1492,7 @@ static void codegenStmt(const ASTNode* node, Function* fn) {
             std::vector<Value*> args;
             for (int i = 0; i < (int)n->funcArgs.size(); i++)
                 args.push_back(resolveCallArg(n->funcArgs[i].get(), n->funcName, i, n->line, n->col));
-            AllocaInst* result = callStructReturningFunc(
+            Value* result = callStructReturningFunc(
                 fn, n->funcName, dstType, args, n->line, n->col);
             copyStruct(dstPtr, result, dstType);
         }
@@ -2287,16 +2287,32 @@ static void codegenFunction(const FunctionNode* fn) {
             if (pi >= fn->params.size()) { ai++; continue; }
             const auto& p = fn->params[pi];
             if (p.type == DataType::Custom && !p.structTypeName.empty()) {
-                // Parâmetro de struct: registra diretamente em localStructs
-                // O arg já é um ponteiro — cria alloca local e copia para permitir modificação
-                StructType* st = structTypes[p.structTypeName];
-                if (!st)
-                    reportError(sourceFile, 0, 0,
-                                "struct type '" + p.structTypeName + "' was not declared", "");
-                AllocaInst* alloca = createEntryAlloca(func, p.name, st);
-                // Copia o struct passado por ponteiro para a alloca local (recursivo para nested)
-                copyStruct(alloca, &arg, p.structTypeName);
-                localStructs[p.name] = std::make_pair(alloca, p.structTypeName);
+                if (p.structTypeName[0] == '&') {
+                    // Referência (&T ou &mut T): não copia, usa o ponteiro diretamente.
+                    std::string realType = p.structTypeName;
+                    size_t space = realType.find(' ');
+                    if (space != std::string::npos) realType = realType.substr(space + 1);
+                    else realType = realType.substr(1);
+                    
+                    // Se for referência a struct, registra em localStructs
+                    if (structTypes.count(realType)) {
+                        localStructs[p.name] = std::make_pair(&arg, realType);
+                    } else {
+                        // Referência a primitivo: guarda o ponteiro em localValues (precisa de alloca para o ponteiro)
+                        AllocaInst* alloca = createEntryAlloca(func, p.name, arg.getType());
+                        builder.CreateStore(&arg, alloca);
+                        localValues[p.name] = alloca;
+                    }
+                } else {
+                    // Parâmetro de struct (por valor no Nova, mas LLVM passa ponteiro): copia para local
+                    StructType* st = structTypes[p.structTypeName];
+                    if (!st)
+                        reportError(sourceFile, 0, 0,
+                                    "struct type '" + p.structTypeName + "' was not declared", "");
+                    AllocaInst* alloca = createEntryAlloca(func, p.name, st);
+                    copyStruct(alloca, &arg, p.structTypeName);
+                    localStructs[p.name] = std::make_pair(alloca, p.structTypeName);
+                }
             } else if (p.name.substr(0, 7) == "__arr__") {
                 // Parâmetro de array: "__arr__N__realName"
                 // Decodifica tamanho e nome real, recria alloca de ArrayType e copia do ponteiro
@@ -2851,7 +2867,7 @@ void codegenProgram(const ProgramNode& program, const std::string& outputFile,
                 Value* selfPtr = func->arg_begin();
 
                 // Registra "self" em localStructs para que self.field funcione dentro do método
-                localStructs["self"] = {static_cast<AllocaInst*>(selfPtr), sd->name};
+                localStructs["self"] = {selfPtr, sd->name};
                 auto& fields = structFields[sd->name];
                 for (int fi = 0; fi < (int)fields.size(); fi++) {
                     Value* gep = builder.CreateStructGEP(st, selfPtr, fi, fields[fi].name);

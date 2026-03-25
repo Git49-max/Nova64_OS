@@ -26,6 +26,8 @@ static std::set<std::string> declaredStructNames;
 // ── Mutabilidade em escopo: variáveis imutáveis ────────────────────────────────
 // Registro de quais variáveis locais são imutáveis
 static std::set<std::string> immutableVars;
+static std::set<std::string> mutableReferences;
+static DataType currentReturnType = DataType::Void;
 
 // ── Levenshtein ───────────────────────────────────────────────────────────────
 static int editDistance(const std::string& a, const std::string& b) {
@@ -54,6 +56,22 @@ static std::string didYouMean(const std::string& name,
 }
 
 // ── Nome legível de token ─────────────────────────────────────────────────────
+static std::string dataTypeToString(DataType t) {
+    switch (t) {
+        case DataType::Int:      return "i32";
+        case DataType::Long:     return "i64";
+        case DataType::LongLong: return "i64";
+        case DataType::Float:    return "f32";
+        case DataType::Double:   return "f64";
+        case DataType::String:   return "str";
+        case DataType::Char:     return "char";
+        case DataType::Void:     return "void";
+        case DataType::Bool:     return "bool";
+        case DataType::Custom:   return lastCustomTypeName;
+    }
+    return "unknown";
+}
+
 static std::string tokenTypeName(TokenType t) {
     switch (t) {
         case TOKEN_SEMI:      return "';'";
@@ -195,12 +213,18 @@ static std::string lastCustomTypeName;
 
 static DataType parseDataType() {
     // &T ou &mut T — tipo de referência/ponteiro
-    // Internamente representado como i64 (endereço bruto), igual ao que &var produz
     if (current.type == TOKEN_AMPERSAND) {
         current = nextToken();
-        if (current.type == TOKEN_MUT) current = nextToken(); // consome 'mut' opcional
-        parseDataType(); // consome o tipo base — descartamos, tudo vira i64
-        return DataType::Long;
+        bool isMut = false;
+        if (current.type == TOKEN_MUT) {
+            isMut = true;
+            current = nextToken();
+        }
+        DataType base = parseDataType();
+        std::string baseName = dataTypeToString(base);
+        
+        lastCustomTypeName = (isMut ? "&mut " : "&") + baseName;
+        return DataType::Custom;
     }
     if (current.type == TOKEN_INT)    { current = nextToken(); return DataType::Int; }
     if (current.type == TOKEN_FLOAT)  { current = nextToken(); return DataType::Float; }
@@ -628,6 +652,9 @@ static NodePtr parseLetDecl(int tokLine, int tokCol) {
     // Struct var: let [mut] p: Point = ...;
     if (type == DataType::Custom) {
         if (!isMut) immutableVars.insert(name);
+        if (customTypeName.substr(0, 5) == "&mut ") {
+            mutableReferences.insert(name);
+        }
         declaredVarNames.insert(name);
         if (current.type == TOKEN_ASSIGN) {
             current = nextToken();
@@ -716,6 +743,17 @@ static NodePtr parseStatement() {
         current = nextToken(); // consome '*'
 
         auto operand = parsePrimary();
+        
+        // Check if dereference mutation is allowed (only for &mut references)
+        if (auto* vn = dynamic_cast<VarNode*>(operand.get())) {
+            if (!mutableReferences.count(vn->name)) {
+                reportError(sourceFile, dl, dc,
+                            "cannot assign to value through immutable reference '" + vn->name + "'",
+                            getSourceLine(dl), 1,
+                            "the reference must be '&mut' to allow mutation through it");
+            }
+        }
+
         auto target = std::make_unique<DerefNode>(std::move(operand), DataType::Int, dl, dc);
 
         if (current.type != TOKEN_ASSIGN)
@@ -732,12 +770,23 @@ static NodePtr parseStatement() {
 
     // ── return ────────────────────────────────────────────────────────────────
     if (current.type == TOKEN_RETURN) {
+        int rl = current.line, rc = current.col;
         current = nextToken();
         if (current.type == TOKEN_SEMI) {
             current = nextToken();
+            if (currentReturnType != DataType::Void) {
+                reportError(sourceFile, rl, rc,
+                    "missing return value in function expected to return '" + dataTypeToString(currentReturnType) + "'",
+                    getSourceLine(rl), 6, "return an expression of the correct type");
+            }
             return std::make_unique<ReturnNode>(nullptr);
         }
         auto e = parseExpr();
+        if (currentReturnType == DataType::Void) {
+            reportError(sourceFile, rl, rc,
+                "function with no return type cannot return a value",
+                getSourceLine(rl), 6, "remove the return value or add '-> Type' to the function signature");
+        }
         eat(TOKEN_SEMI);
         return std::make_unique<ReturnNode>(std::move(e));
     }
@@ -1343,9 +1392,14 @@ static std::vector<ParamNode> parseFnParams(const std::string& fnName,
         // &self  ou  &mut self
         if (current.type == TOKEN_AMPERSAND) {
             current = nextToken();
-            if (current.type == TOKEN_MUT) current = nextToken();  // &mut self
+            bool mutSelf = false;
+            if (current.type == TOKEN_MUT) {
+                mutSelf = true;
+                current = nextToken(); // &mut self
+            }
             if (current.type == TOKEN_SELF) {
                 if (hasRefSelf) *hasRefSelf = true;
+                if (mutSelf) mutableReferences.insert("self");
                 current = nextToken();
                 if (current.type == TOKEN_COMMA) current = nextToken();
                 continue;
@@ -1706,6 +1760,9 @@ static void parseImpl(ProgramNode& program, int tokLine, int tokCol) {
             }
         }
 
+        immutableVars.clear(); // novo escopo de função
+        mutableReferences.clear();
+
         bool hasRefSelf = false;
         auto params = parseFnParams(methodName, fnLine, fnCol, &hasRefSelf);
         DataType retType = parseFnReturn();
@@ -1718,10 +1775,26 @@ static void parseImpl(ProgramNode& program, int tokLine, int tokCol) {
                         "add the method body: { ... }");
 
         declaredFunctionNames.insert(structName + "::" + methodName);
-        immutableVars.clear(); // novo escopo de função
+        currentReturnType = retType;
+
+        // Parameters are immutable by default
+        for (const auto& p : params) {
+            std::string pName = p.name;
+            if (pName.substr(0, 7) == "__arr__") {
+                auto sep = pName.find("__", 7);
+                if (sep != std::string::npos) pName = pName.substr(sep + 2);
+            }
+            if (p.type == DataType::Custom && p.structTypeName.substr(0, 5) == "&mut ") {
+                mutableReferences.insert(pName);
+            }
+            immutableVars.insert(pName);
+        }
+
         auto body = parseBlock();
         targetStruct->methods.push_back({retType, retStructType, methodName,
                                          std::move(params), std::move(body), hasRefSelf});
+        
+        currentReturnType = DataType::Void;
     }
     eat(TOKEN_RBRACE);
 }
@@ -1879,6 +1952,11 @@ ProgramNode parseProgram(const std::string& source, const std::string& filename)
             int tokLine = current.line, tokCol = current.col;
             current = nextToken();
             std::string name = eat(TOKEN_IDENT).value;
+            
+            // Setup function context before parsing params and body
+            immutableVars.clear();
+            mutableReferences.clear();
+
             auto params = parseFnParams(name, tokLine, tokCol);
             DataType retType = parseFnReturn();
             std::string retStructType = (retType == DataType::Custom) ? lastCustomTypeName : "";
@@ -1891,12 +1969,26 @@ ProgramNode parseProgram(const std::string& source, const std::string& filename)
                             "for forward declarations, use a .nh header file");
 
             declaredFunctionNames.insert(name);
-            // Limpa escopo de imutabilidade para cada nova função
-            immutableVars.clear();
+            currentReturnType = retType;
+            
+            // Parameters are immutable by default
+            for (const auto& p : params) {
+                std::string pName = p.name;
+                if (pName.substr(0, 7) == "__arr__") {
+                    auto sep = pName.find("__", 7);
+                    if (sep != std::string::npos) pName = pName.substr(sep + 2);
+                }
+                if (p.type == DataType::Custom && p.structTypeName.substr(0, 5) == "&mut ") {
+                    mutableReferences.insert(pName);
+                }
+                immutableVars.insert(pName);
+            }
 
             program.declarations.push_back(
                 std::make_unique<FunctionNode>(retType, retStructType, name,
                                                std::move(params), parseBlock()));
+            
+            currentReturnType = DataType::Void;
             continue;
         }
 
