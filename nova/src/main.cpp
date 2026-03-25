@@ -12,6 +12,7 @@
 #include "../include/ast.h"
 #include "../include/codegen.h"
 #include "../include/error.h"
+#include "../include/analysis.h"
 
 ProgramNode parseProgram(const std::string& source, const std::string& filename);
 
@@ -31,7 +32,7 @@ static void printError(const std::string& msg) {
 
 // ── --help ────────────────────────────────────────────────────────────────────
 static void printHelp() {
-    std::cout << ANSI_BOLD << "Nova Compiler - Beta 1.3.0\n" << ANSI_RESET;
+    std::cout << ANSI_BOLD << "Nova Compiler - Beta 2.0.0 \n" << ANSI_RESET;
     std::cout << "\n";
     std::cout << ANSI_BOLD << "Usage:\n" << ANSI_RESET;
     std::cout << "  n++ <file.npp> [file2.npp ...] [options]\n";
@@ -162,6 +163,7 @@ static std::string compileSingleFile(const std::string& srcFile, int optLevel,
     buf << file.rdbuf();
 
     ProgramNode program = parseProgram(buf.str(), srcFile);
+    runAnalysis(program, srcFile);
     codegenProgram(program, objOut, srcFile, optLevel, winTarget);
     return objOut;
 }
@@ -249,8 +251,8 @@ static int compileFile(const std::vector<std::string>& sourceFiles,
 // ═════════════════════════════════════════════════════════════════════════════
 
 static const std::vector<std::string> KEYWORDS = {
-    "if","else","then","while","for","return","print","struct",
-    "int","float","string","void"
+    "if","else","while","for","return","print","struct",
+    "i32","f32","string","void", "char", "i64", "f64", "i64"
 };
 
 
@@ -291,11 +293,11 @@ static void initEditorColors() {
 }
 
 // Palavras-chave de tipo separadas para cor diferente
-static const std::vector<std::string> TYPE_KW = {"int","float","string","void"};
+static const std::vector<std::string> TYPE_KW = {"i32","i64","char", "f32", "f64", "string","void"};
 static bool isTypeKw(const std::string& w) {
     return std::find(TYPE_KW.begin(), TYPE_KW.end(), w) != TYPE_KW.end();
 }
-static const std::vector<std::string> CTRL_KW = {"if","else","then","while","for","return","print","struct"};
+static const std::vector<std::string> CTRL_KW = {"if","else","while","for","return","print","struct", "impl"};
 static bool isCtrlKw(const std::string& w) {
     return std::find(CTRL_KW.begin(), CTRL_KW.end(), w) != CTRL_KW.end();
 }
@@ -356,6 +358,12 @@ static void renderLine(WINDOW* win, int y, int xOff,
                 waddstr(win, word.c_str());
                 wattroff(win, COLOR_PAIR(COL_NORMAL));
             }
+            continue;
+        }
+        if (std::string("+-*/=%&|<>!:").find(vis[i]) != std::string::npos) {
+            wattron(win, COLOR_PAIR(COL_TYPE) | A_BOLD); // Usa a cor de tipos para símbolos
+            waddch(win, (unsigned char)vis[i++]);
+            wattroff(win, COLOR_PAIR(COL_TYPE) | A_BOLD);
             continue;
         }
         // Normal
@@ -562,6 +570,18 @@ static void runEditor(const std::string& editFile,
         }
         wmove(editorWin, curRow - scrollRow, LINENO_WIDTH + (curCol - scrollX));
         wrefresh(editorWin);
+        int cursorY = curRow - scrollRow;
+        int cursorX = LINENO_WIDTH + (curCol - scrollX);
+
+        // A_BLINK faz o caractere piscar (se o terminal suportar)
+        wattron(editorWin, A_BLINK | COLOR_PAIR(COL_KEYWORD) | A_BOLD);
+        mvwaddch(editorWin, cursorY, cursorX, '|'); 
+        wattroff(editorWin, A_BLINK | COLOR_PAIR(COL_KEYWORD) | A_BOLD);
+
+        // Move o cursor real para a mesma posição (ajuda na navegação do terminal)
+        wmove(editorWin, cursorY, cursorX);
+        wrefresh(editorWin);
+        // ---------------------------------
 
         // ── Footer ────────────────────────────────────────────────────
         werase(footerWin);
@@ -726,7 +746,7 @@ int main(int argc, char* argv[]) {
     if (argc < 2) { std::cout << "\033[1;31mFatal Error:\033[0m No file specified\n"; return 1; }
 
     if (std::string(argv[1]) == "--version") {
-        std::cout << ANSI_BOLD << "Nova Compiler" << ANSI_RESET << " - Beta 1.3.0\n";
+        std::cout << ANSI_BOLD << "Nova Compiler" << ANSI_RESET << " - Beta 2.0.0 \n";
         return 0;
     }
     if (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h") {
