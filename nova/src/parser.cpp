@@ -55,6 +55,10 @@ static std::string didYouMean(const std::string& name,
     return "";
 }
 
+// ── Tipo de dado: nome: Type ──────────────────────────────────────────────────
+// Quando retorna DataType::Custom, o caller lê lastCustomTypeName.
+static std::string lastCustomTypeName;
+
 // ── Nome legível de token ─────────────────────────────────────────────────────
 static std::string dataTypeToString(DataType t) {
     switch (t) {
@@ -206,10 +210,6 @@ static void checkMutable(const std::string& varName, int line, int col) {
                     "declare with 'let mut " + varName + ": ...' to allow mutation");
     }
 }
-
-// ── Tipo de dado: nome: Type ──────────────────────────────────────────────────
-// Quando retorna DataType::Custom, o caller lê lastCustomTypeName.
-static std::string lastCustomTypeName;
 
 static DataType parseDataType() {
     // &T ou &mut T — tipo de referência/ponteiro
