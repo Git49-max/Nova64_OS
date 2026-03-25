@@ -1130,6 +1130,7 @@ static NodePtr parseStatement() {
             }
             // arr[i].field = val;
             if (current.type == TOKEN_DOT) {
+                checkMutable(firstName, tokLine, tokCol);
                 current = nextToken();
                 std::string field = eat(TOKEN_IDENT).value;
                 if (current.type != TOKEN_ASSIGN)
@@ -1187,6 +1188,12 @@ static NodePtr parseStatement() {
 
         // Acesso de campo / chamada de método como statement
         if (current.type == TOKEN_DOT) {
+            if (immutableVars.count(firstName) && !mutableReferences.count(firstName)) {
+                reportError(sourceFile, tokLine, tokCol,
+                            "cannot mutate fields of immutable variable '" + firstName + "'",
+                            getSourceLine(tokLine), (int)firstName.size(),
+                            "declare with 'let mut' or use a '&mut' reference to allow field mutation");
+            }
             current = nextToken();
             std::string member = eat(TOKEN_IDENT).value;
             std::string composedName = firstName;
@@ -1776,6 +1783,7 @@ static void parseImpl(ProgramNode& program, int tokLine, int tokCol) {
 
         declaredFunctionNames.insert(structName + "::" + methodName);
         currentReturnType = retType;
+        if (hasRefSelf) immutableVars.insert("self");
 
         // Parameters are immutable by default
         for (const auto& p : params) {

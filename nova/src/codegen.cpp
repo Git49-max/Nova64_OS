@@ -912,27 +912,46 @@ static Value* codegenExpr(const ASTNode* node) {
     if (auto* n = dynamic_cast<const UnaryOpNode*>(node)) {
         // '&' / '&mut' geram um ponteiro bruto como inteiro (i64).
         if (n->op == "&" || n->op == "&mut") {
-            if (auto* varNode = dynamic_cast<const VarNode*>(n->operand.get())) {
-                Value* ptr = nullptr;
-                auto localIt = localValues.find(varNode->name);
-                if (localIt != localValues.end()) ptr = localIt->second;
+            Value* ptr = nullptr;
+            if (auto* vn = dynamic_cast<const VarNode*>(n->operand.get())) {
+                auto lit = localValues.find(vn->name);
+                if (lit != localValues.end()) ptr = lit->second;
                 else {
-                    auto globalIt = globalValues.find(varNode->name);
-                    if (globalIt != globalValues.end()) ptr = globalIt->second;
+                    auto git = globalValues.find(vn->name);
+                    if (git != globalValues.end()) ptr = git->second;
                 }
-                
-                if (ptr)
-                    return builder.CreatePtrToInt(ptr, Type::getInt64Ty(ctx), "addrof");
-                reportError(sourceFile, n->line, n->col,
-                            "cannot take address of undeclared variable '" + varNode->name + "'",
-                            getSourceLine(n->line), (int)varNode->name.size());
-                return nullptr;
-            } else {
-                reportError(sourceFile, n->line, n->col,
-                            "invalid borrow: must borrow a variable",
-                            getSourceLine(n->line), 1);
-                return nullptr;
+            } else if (auto* an = dynamic_cast<const ArrayAccessNode*>(n->operand.get())) {
+                Value* idx = codegenExpr(an->index.get());
+                auto lit = localArrays.find(an->name);
+                if (lit != localArrays.end())
+                    ptr = builder.CreateGEP(lit->second.second, lit->second.first,
+                                            {ConstantInt::get(Type::getInt32Ty(ctx), 0), idx});
+                else {
+                    auto git = globalArrays.find(an->name);
+                    if (git != globalArrays.end())
+                        ptr = builder.CreateGEP(git->second.second, git->second.first,
+                                                {ConstantInt::get(Type::getInt32Ty(ctx), 0), idx});
+                }
+            } else if (auto* fan = dynamic_cast<const FieldAccessNode*>(n->operand.get())) {
+                auto [sPtr, tName] = resolveNestedStructPtr(fan->varName, n->line, n->col);
+                if (sPtr) {
+                    int idx = getFieldIndex(tName, fan->fieldName, n->line, n->col);
+                    ptr = builder.CreateStructGEP(structTypes[tName], sPtr, idx, fan->fieldName);
+                }
+            } else if (auto* dn = dynamic_cast<const DerefNode*>(n->operand.get())) {
+                ptr = codegenExpr(dn->operand.get());
+                if (ptr->getType()->isIntegerTy(64))
+                    ptr = builder.CreateIntToPtr(ptr, PointerType::getUnqual(llvmType(dn->type)));
             }
+
+            if (ptr)
+                return builder.CreatePtrToInt(ptr, Type::getInt64Ty(ctx), "addrof");
+
+            reportError(sourceFile, n->line, n->col,
+                        "cannot take address of this expression",
+                        getSourceLine(n->line), 1,
+                        "you can only take the address of variables, array elements, or struct fields");
+            return nullptr;
         }
         Value* val = codegenExpr(n->operand.get());
         // Converte para i1: val != 0
