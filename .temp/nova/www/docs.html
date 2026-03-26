@@ -391,10 +391,6 @@ footer {
         <a href="#pointers" class="sidebar-link">Pointers</a>
     </div>
     <div class="sidebar-section">
-        <div class="sidebar-section-label">Advanced</div>
-        <a href="#inline-asm" class="sidebar-link">Inline Assembly & IR</a>
-    </div>
-    <div class="sidebar-section">
         <div class="sidebar-section-label">Language</div>
         <a href="#variables" class="sidebar-link">Variables</a>
         <a href="#operators" class="sidebar-link">Operators</a>
@@ -448,7 +444,7 @@ footer {
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="code-filename">hello.npp</div></div>
             <div class="code-block-body"><pre><span class="kw">#include</span> <span class="str">&lt;stdio.nh&gt;</span>
 
-<span class="typ">void</span> <span class="fn">main</span>() {
+<span class="kw">fn</span> <span class="fn">main</span>() {
     <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"Hello, World!\n"</span>)<span class="op">;</span>
 }</pre></div>
         </div>
@@ -468,18 +464,18 @@ Hello, World!</pre></div>
     <div class="docs-section" id="data-types">
         <div class="section-eyebrow">Types</div>
         <h2>Data Types</h2>
-        <p>Nova has eight primitive types. All types are checked at compile time — there are no implicit conversions.</p>
+        <p>Nova uses Rust-style type names. All types are checked at compile time — there are no implicit conversions.</p>
         <table class="docs-table">
             <thead><tr><th>Type</th><th>Description</th><th>Example</th></tr></thead>
             <tbody>
-                <tr><td>int / i32</td><td>32-bit signed integer</td><td>42, -7, 0</td></tr>
-                <tr><td>long / i64</td><td>64-bit signed integer — auto-promoted when literal &gt; 2147483647</td><td>9876543210</td></tr>
-                <tr><td>float / f32</td><td>32-bit floating point</td><td>3.14, -0.5</td></tr>
-                <tr><td>double / f64</td><td>64-bit floating point</td><td>3.14159265358979</td></tr>
+                <tr><td>i32</td><td>32-bit signed integer</td><td>42, -7, 0</td></tr>
+                <tr><td>i64</td><td>64-bit signed integer — auto-promoted when literal &gt; 2147483647</td><td>9876543210</td></tr>
+                <tr><td>f32</td><td>32-bit floating point</td><td>3.14, -0.5</td></tr>
+                <tr><td>f64</td><td>64-bit floating point</td><td>3.14159265358979</td></tr>
                 <tr><td>char</td><td>8-bit character — literals use single quotes</td><td>'A', '\n', '\t'</td></tr>
-                <tr><td>string / str</td><td>UTF-8 string literal — escape sequences processed</td><td>"hello\n"</td></tr>
+                <tr><td>str</td><td>UTF-8 string literal — escape sequences processed</td><td>"hello\n"</td></tr>
                 <tr><td>bool</td><td>Boolean value</td><td>true, false</td></tr>
-                <tr><td>void</td><td>No value — functions only</td><td>—</td></tr>
+                <tr><td>void</td><td>No value — function return only</td><td>—</td></tr>
             </tbody>
         </table>
     </div>
@@ -490,10 +486,10 @@ Hello, World!</pre></div>
         <p>Variables require an explicit type at declaration. They can be optionally initialized; uninitialized variables default to <code>0</code> or null.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
-            <div class="code-block-body"><pre><span class="typ">int</span> x<span class="op">;</span>
-<span class="typ">int</span> y <span class="op">=</span> <span class="num">10</span><span class="op">;</span>
-<span class="typ">float</span> pi <span class="op">=</span> <span class="num">3.14</span><span class="op">;</span>
-<span class="typ">string</span> name <span class="op">=</span> <span class="str">"Nova"</span><span class="op">;</span></pre></div>
+            <div class="code-block-body"><pre><span class="typ">i32</span> x<span class="op">;</span>
+<span class="typ">i32</span> y <span class="op">=</span> <span class="num">10</span><span class="op">;</span>
+<span class="typ">f32</span> pi <span class="op">=</span> <span class="num">3.14</span><span class="op">;</span>
+<span class="typ">str</span> name <span class="op">=</span> <span class="str">"Nova"</span><span class="op">;</span></pre></div>
         </div>
 
         <h3>Assignment</h3>
@@ -537,12 +533,12 @@ x<span class="op">--;</span>      <span class="cmt">// x = x - 1</span></pre></d
     <div class="docs-section" id="control-flow">
         <div class="section-eyebrow">Control Flow</div>
         <h2>Control Flow</h2>
-        <p>Nova requires the <code>then</code> keyword before the body of an <code>if</code> statement.</p>
+        <p>Standard if/else syntax for conditional execution.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
-            <div class="code-block-body"><pre><span class="kw">if</span>(x <span class="op">&gt;</span> <span class="num">0</span>) <span class="kw">then</span> {
+            <div class="code-block-body"><pre><span class="kw">if</span>(x <span class="op">&gt;</span> <span class="num">0</span>) {
     <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"positive\n"</span>)<span class="op">;</span>
-} <span class="kw">else if</span>(x <span class="op">==</span> <span class="num">0</span>) <span class="kw">then</span> {
+} <span class="kw">else if</span>(x <span class="op">==</span> <span class="num">0</span>) {
     <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"zero\n"</span>)<span class="op">;</span>
 } <span class="kw">else</span> {
     <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"negative\n"</span>)<span class="op">;</span>
@@ -583,17 +579,17 @@ x<span class="op">--;</span>      <span class="cmt">// x = x - 1</span></pre></d
     <div class="docs-section" id="functions">
         <div class="section-eyebrow">Functions</div>
         <h2>Functions</h2>
-        <p>Functions are declared with a return type, name, and typed parameter list. They support full recursion.</p>
+        <p>Functions are declared using the <code>fn</code> keyword, followed by the name, parameters, and optional return type.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
             <div class="code-block-body"><pre><span class="kw">#include</span> <span class="str">&lt;stdio.nh&gt;</span>
 
-<span class="typ">int</span> <span class="fn">add</span>(<span class="typ">int</span> a, <span class="typ">int</span> b) {
+<span class="kw">fn</span> <span class="fn">add</span>(a: <span class="typ">i32</span>, b: <span class="typ">i32</span>) -> <span class="typ">i32</span> {
     <span class="kw">return</span> a <span class="op">+</span> b<span class="op">;</span>
 }
 
-<span class="typ">int</span> <span class="fn">factorial</span>(<span class="typ">int</span> n) {
-    <span class="kw">if</span>(n <span class="op">&lt;=</span> <span class="num">1</span>) <span class="kw">then</span> { <span class="kw">return</span> <span class="num">1</span><span class="op">;</span> }
+<span class="kw">fn</span> <span class="fn">factorial</span>(n: <span class="typ">i32</span>) -> <span class="typ">i32</span> {
+    <span class="kw">if</span>(n <span class="op">&lt;=</span> <span class="num">1</span>) { <span class="kw">return</span> <span class="num">1</span><span class="op">;</span> }
     <span class="kw">return</span> n <span class="op">*</span> <span class="fn">factorial</span>(n <span class="op">-</span> <span class="num">1</span>)<span class="op">;</span>
 }</pre></div>
         </div>
@@ -726,35 +722,34 @@ primes[i <span class="op">+</span> <span class="num">1</span>] <span class="op">
     <div class="docs-section" id="casts">
         <div class="section-eyebrow">Types</div>
         <h2>Explicit Casts</h2>
-        <p>Use the <code>as</code> keyword or C-style casts to convert between types. The compiler warns when precision is lost.</p>
+        <p>Use the <code>as</code> keyword to convert between types. The compiler warns when precision is lost.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
-            <div class="code-block-body"><pre><span class="typ">int</span> a <span class="op">=</span> <span class="num">7</span><span class="op">;</span>
-<span class="typ">double</span> d <span class="op">=</span> (<span class="typ">double</span>)a <span class="op">/</span> <span class="num">2.0</span><span class="op">;</span>   <span class="cmt">// → 3.5</span>
+            <div class="code-block-body"><pre><span class="typ">i32</span> a <span class="op">=</span> <span class="num">7</span><span class="op">;</span>
+<span class="typ">f64</span> d <span class="op">=</span> a <span class="kw">as</span> <span class="typ">f64</span> <span class="op">/</span> <span class="num">2.0</span><span class="op">;</span>   <span class="cmt">// → 3.5</span>
 
-<span class="typ">double</span> pi <span class="op">=</span> <span class="num">3.14159</span><span class="op">;</span>
-<span class="typ">int</span> truncated <span class="op">=</span> (<span class="typ">int</span>)pi<span class="op">;</span>       <span class="cmt">// → 3</span>
+<span class="typ">f64</span> pi <span class="op">=</span> <span class="num">3.14159</span><span class="op">;</span>
+<span class="typ">i32</span> truncated <span class="op">=</span> pi <span class="kw">as</span> <span class="typ">i32</span><span class="op">;</span>       <span class="cmt">// → 3</span>
 
-<span class="typ">int</span> small <span class="op">=</span> <span class="num">1000000</span><span class="op">;</span>
-<span class="typ">long</span> big <span class="op">=</span> (<span class="typ">long</span>)small <span class="op">*</span> <span class="num">1000000</span><span class="op">;</span>
+<span class="typ">i32</span> small <span class="op">=</span> <span class="num">1000000</span><span class="op">;</span>
+<span class="typ">i64</span> big <span class="op">=</span> small <span class="kw">as</span> <span class="typ">i64</span> <span class="op">*</span> <span class="num">1000000</span><span class="op">;</span>
 
 <span class="typ">char</span> ch <span class="op">=</span> <span class="str">'A'</span><span class="op">;</span>
-<span class="typ">int</span> code <span class="op">=</span> (<span class="typ">int</span>)ch<span class="op">;</span>             <span class="cmt">// → 65</span>
-<span class="typ">float</span> f <span class="op">=</span> <span class="num">10</span> <span class="kw">as</span> <span class="typ">float</span><span class="op">;</span>          <span class="cmt">// using 'as' keyword</span></pre></div>
+<span class="typ">i32</span> code <span class="op">=</span> ch <span class="kw">as</span> <span class="typ">i32</span><span class="op">;</span>             <span class="cmt">// → 65</pre></div>
         </div>
     </div>
 
     <div class="docs-section" id="pointers">
         <div class="section-eyebrow">Pointers</div>
         <h2>Pointers</h2>
-        <p>Nova supports basic pointer operations using the <code>&amp;</code> (address-of) and <code>*</code> (dereference) operators. Pointers are represented internally as 64-bit addresses stored in <code>long</code> variables.</p>
+        <p>Nova supports basic pointer operations using the <code>&amp;</code> (address-of) and <code>*</code> (dereference) operators. Pointers are represented internally as 64-bit addresses stored in <code>i64</code> variables.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
-            <div class="code-block-body"><pre><span class="typ">int</span> x <span class="op">=</span> <span class="num">10</span><span class="op">;</span>
-<span class="typ">long</span> p <span class="op">=</span> <span class="op">&amp;</span>x<span class="op">;</span>        <span class="cmt">// get address of x</span>
+            <div class="code-block-body"><pre><span class="typ">i32</span> x <span class="op">=</span> <span class="num">10</span><span class="op">;</span>
+<span class="typ">i64</span> p <span class="op">=</span> <span class="op">&amp;</span>x<span class="op">;</span>        <span class="cmt">// get address of x</span>
 <span class="op">*</span>p <span class="op">=</span> <span class="num">20</span><span class="op">;</span>            <span class="cmt">// dereference: x is now 20</span>
 
-<span class="typ">int</span> y <span class="op">=</span> <span class="op">*</span>p<span class="op">;</span>         <span class="cmt">// read through pointer</span></pre></div>
+<span class="typ">i32</span> y <span class="op">=</span> <span class="op">*</span>p<span class="op">;</span>         <span class="cmt">// read through pointer</span></pre></div>
         </div>
         <div class="note">Pointers are useful for passing references to functions to modify external variables or avoid copying large structures.</div>
     </div>
@@ -1031,31 +1026,6 @@ arr[i] <span class="op">=</span> <span class="num">1</span><span class="op">;</s
         <p>Keep each <code>.npp</code> focused on a single topic — strings, geometry, IO. Pair it with a <code>.nh</code> that exposes only what callers need and hides internal helpers. This makes each module independently testable and easy to reuse across projects.</p>
     </div>
 
-    <div class="docs-section" id="inline-asm">
-        <div class="section-eyebrow">Advanced</div>
-        <h2>Inline Assembly & IR</h2>
-        <p>Nova allows embedding raw Assembly or LLVM IR directly into your code for low-level optimizations. You can capture Nova variables using the <code>$</code> prefix.</p>
-
-        <h3>asm { ... }</h3>
-        <p>Uses AT&amp;T syntax for inline assembly. Captured variables are passed as input constraints.</p>
-        <div class="code-block">
-            <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
-            <div class="code-block-body"><pre><span class="typ">int</span> a <span class="op">=</span> <span class="num">10</span><span class="op">;</span>
-<span class="kw">asm</span> {
-    <span class="str">"movl $a, %eax"</span>
-} <span class="op">[</span>a<span class="op">]</span><span class="op">;</span></pre></div>
-        </div>
-
-        <h3>ir { ... }</h3>
-        <p>Injects LLVM IR instructions directly into the codegen stream. Use with caution.</p>
-        <div class="code-block">
-            <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
-            <div class="code-block-body"><pre><span class="typ">int</span> x <span class="op">=</span> <span class="num">42</span><span class="op">;</span>
-<span class="kw">ir</span> {
-    <span class="str">"%res = add i32 $x, 1"</span>
-} <span class="op">[</span>x<span class="op">]</span><span class="op">;</span></pre></div>
-        </div>
-    </div>
 
     <div class="docs-section" id="comments">
         <div class="section-eyebrow">Built-ins</div>
