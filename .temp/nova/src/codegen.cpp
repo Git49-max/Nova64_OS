@@ -219,6 +219,7 @@ static Type* llvmType(DataType t) {
         case DataType::String:   return PointerType::getUnqual(ctx);
         case DataType::Char:     return Type::getInt8Ty(ctx);
         case DataType::Void:     return Type::getVoidTy(ctx);
+        case DataType::Bool:     return Type::getInt1Ty(ctx);
         case DataType::Custom:   return PointerType::getUnqual(ctx); // struct → ponteiro
     }
     return Type::getInt32Ty(ctx);
@@ -230,6 +231,7 @@ static AllocaInst* createEntryAlloca(Function* fn, const std::string& name, Type
 }
 
 static int getFieldIndex(const std::string& typeName, const std::string& fieldName, int line, int col);
+static Value* codegenExpr(const ASTNode* node);
 
 // Retorna ponteiro (Value*) para o struct (local ou global)
 static Value* getStructPtrValue(const std::string& varName, std::string& outTypeName) {
@@ -2085,8 +2087,10 @@ static void codegenStmt(const ASTNode* node, Function* fn) {
     }
 
     if (auto* n = dynamic_cast<const ForNode*>(node)) {
-        // init (pode declarar variável nova no escopo local)
-        if (n->init) codegenStmt(n->init.get(), fn);
+        if (current.type == TOKEN_LET) {
+            current = nextToken();
+            if (current.type == TOKEN_MUT) { current = nextToken(); }
+            std::string nm = eat(TOKEN_IDENT).value;
 
         BasicBlock* condBB  = BasicBlock::Create(ctx, "for.cond", fn);
         BasicBlock* bodyBB  = BasicBlock::Create(ctx, "for.body", fn);
