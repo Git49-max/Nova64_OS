@@ -388,6 +388,11 @@ footer {
         <div class="sidebar-section-label">Getting Started</div>
         <a href="#getting-started" class="sidebar-link active">Introduction</a>
         <a href="#data-types" class="sidebar-link">Data Types</a>
+        <a href="#pointers" class="sidebar-link">Pointers</a>
+    </div>
+    <div class="sidebar-section">
+        <div class="sidebar-section-label">Advanced</div>
+        <a href="#inline-asm" class="sidebar-link">Inline Assembly & IR</a>
     </div>
     <div class="sidebar-section">
         <div class="sidebar-section-label">Language</div>
@@ -433,7 +438,7 @@ footer {
         <h2>Getting Started with Nova</h2>
         <p>Nova is a compiled, statically typed language that uses LLVM as its backend, linking with clang to produce native executables. The syntax is familiar — if you've written C, C++, or Java, you'll feel at home immediately.</p>
         <p>Download the compiler from source using the downloads page.</p>
-        <p>If you have an GUI, right click on the tar.gz file -> Extract Here. If you have not, run <div class="code-block"><div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="code-filename">terminal</div></div><div class="code-block-body">tar -xzvf nova-lang-v1.2.0beta.tar.gz</div></div></p>
+        <p>If you have an GUI, right click on the tar.gz file -> Extract Here. If you have not, run <div class="code-block"><div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="code-filename">terminal</div></div><div class="code-block-body">tar -xzvf nova-lang-v2.0.1beta.tar.gz</div></div></p>
         <p>Open the terminal on the extracted folder and run <div class="code-block"><div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="code-filename">terminal</div></div><div class="code-block-body">chmod +x install.sh</div></div> <div class="code-block"><div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="code-filename">terminal</div></div><div class="code-block-body">sudo ./install.sh</div></div></p>
         <p>After it sucessfully installs the language, restart the terminal, and start coding!</p>
 
@@ -463,16 +468,17 @@ Hello, World!</pre></div>
     <div class="docs-section" id="data-types">
         <div class="section-eyebrow">Types</div>
         <h2>Data Types</h2>
-        <p>Nova has seven primitive types. All types are checked at compile time — there are no implicit conversions.</p>
+        <p>Nova has eight primitive types. All types are checked at compile time — there are no implicit conversions.</p>
         <table class="docs-table">
             <thead><tr><th>Type</th><th>Description</th><th>Example</th></tr></thead>
             <tbody>
-                <tr><td>int</td><td>32-bit signed integer</td><td>42, -7, 0</td></tr>
-                <tr><td>long</td><td>64-bit signed integer — auto-promoted when literal &gt; 2147483647</td><td>9876543210</td></tr>
-                <tr><td>float</td><td>32-bit floating point</td><td>3.14, -0.5</td></tr>
-                <tr><td>double</td><td>64-bit floating point</td><td>3.14159265358979</td></tr>
+                <tr><td>int / i32</td><td>32-bit signed integer</td><td>42, -7, 0</td></tr>
+                <tr><td>long / i64</td><td>64-bit signed integer — auto-promoted when literal &gt; 2147483647</td><td>9876543210</td></tr>
+                <tr><td>float / f32</td><td>32-bit floating point</td><td>3.14, -0.5</td></tr>
+                <tr><td>double / f64</td><td>64-bit floating point</td><td>3.14159265358979</td></tr>
                 <tr><td>char</td><td>8-bit character — literals use single quotes</td><td>'A', '\n', '\t'</td></tr>
-                <tr><td>string</td><td>UTF-8 string literal — escape sequences processed</td><td>"hello\n"</td></tr>
+                <tr><td>string / str</td><td>UTF-8 string literal — escape sequences processed</td><td>"hello\n"</td></tr>
+                <tr><td>bool</td><td>Boolean value</td><td>true, false</td></tr>
                 <tr><td>void</td><td>No value — functions only</td><td>—</td></tr>
             </tbody>
         </table>
@@ -720,7 +726,7 @@ primes[i <span class="op">+</span> <span class="num">1</span>] <span class="op">
     <div class="docs-section" id="casts">
         <div class="section-eyebrow">Types</div>
         <h2>Explicit Casts</h2>
-        <p>Use C-style casts to convert between types. The compiler warns when precision is lost.</p>
+        <p>Use the <code>as</code> keyword or C-style casts to convert between types. The compiler warns when precision is lost.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
             <div class="code-block-body"><pre><span class="typ">int</span> a <span class="op">=</span> <span class="num">7</span><span class="op">;</span>
@@ -733,8 +739,24 @@ primes[i <span class="op">+</span> <span class="num">1</span>] <span class="op">
 <span class="typ">long</span> big <span class="op">=</span> (<span class="typ">long</span>)small <span class="op">*</span> <span class="num">1000000</span><span class="op">;</span>
 
 <span class="typ">char</span> ch <span class="op">=</span> <span class="str">'A'</span><span class="op">;</span>
-<span class="typ">int</span> code <span class="op">=</span> (<span class="typ">int</span>)ch<span class="op">;</span>             <span class="cmt">// → 65</span></pre></div>
+<span class="typ">int</span> code <span class="op">=</span> (<span class="typ">int</span>)ch<span class="op">;</span>             <span class="cmt">// → 65</span>
+<span class="typ">float</span> f <span class="op">=</span> <span class="num">10</span> <span class="kw">as</span> <span class="typ">float</span><span class="op">;</span>          <span class="cmt">// using 'as' keyword</span></pre></div>
         </div>
+    </div>
+
+    <div class="docs-section" id="pointers">
+        <div class="section-eyebrow">Pointers</div>
+        <h2>Pointers</h2>
+        <p>Nova supports basic pointer operations using the <code>&amp;</code> (address-of) and <code>*</code> (dereference) operators. Pointers are represented internally as 64-bit addresses stored in <code>long</code> variables.</p>
+        <div class="code-block">
+            <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
+            <div class="code-block-body"><pre><span class="typ">int</span> x <span class="op">=</span> <span class="num">10</span><span class="op">;</span>
+<span class="typ">long</span> p <span class="op">=</span> <span class="op">&amp;</span>x<span class="op">;</span>        <span class="cmt">// get address of x</span>
+<span class="op">*</span>p <span class="op">=</span> <span class="num">20</span><span class="op">;</span>            <span class="cmt">// dereference: x is now 20</span>
+
+<span class="typ">int</span> y <span class="op">=</span> <span class="op">*</span>p<span class="op">;</span>         <span class="cmt">// read through pointer</span></pre></div>
+        </div>
+        <div class="note">Pointers are useful for passing references to functions to modify external variables or avoid copying large structures.</div>
     </div>
 
     <div class="docs-section" id="type-safety">
@@ -859,7 +881,7 @@ arr[i] <span class="op">=</span> <span class="num">1</span><span class="op">;</s
 }</pre></div>
         </div>
         <div class="note">Calling a namespace function without the correct prefix — or without the corresponding <code>#include</code> — is a compile-time error.</div>
-        <div class="warn"><strong>Beta 1.3.0 Breaking Change:</strong> The use of namespaces defined in header files (<code>.nh</code>) is now strictly mandatory for accessing structs and functions bound to them.</div>
+        <div class="warn"><strong>Beta 2.0.1 Update:</strong> The use of namespaces defined in header files (<code>.nh</code>) is strictly mandatory for accessing structs and functions bound to them.</div>
     </div>
 
     <div class="docs-section" id="overloading">
@@ -1009,7 +1031,33 @@ arr[i] <span class="op">=</span> <span class="num">1</span><span class="op">;</s
         <p>Keep each <code>.npp</code> focused on a single topic — strings, geometry, IO. Pair it with a <code>.nh</code> that exposes only what callers need and hides internal helpers. This makes each module independently testable and easy to reuse across projects.</p>
     </div>
 
-        <div class="docs-section" id="comments">
+    <div class="docs-section" id="inline-asm">
+        <div class="section-eyebrow">Advanced</div>
+        <h2>Inline Assembly & IR</h2>
+        <p>Nova allows embedding raw Assembly or LLVM IR directly into your code for low-level optimizations. You can capture Nova variables using the <code>$</code> prefix.</p>
+
+        <h3>asm { ... }</h3>
+        <p>Uses AT&amp;T syntax for inline assembly. Captured variables are passed as input constraints.</p>
+        <div class="code-block">
+            <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
+            <div class="code-block-body"><pre><span class="typ">int</span> a <span class="op">=</span> <span class="num">10</span><span class="op">;</span>
+<span class="kw">asm</span> {
+    <span class="str">"movl $a, %eax"</span>
+} <span class="op">[</span>a<span class="op">]</span><span class="op">;</span></pre></div>
+        </div>
+
+        <h3>ir { ... }</h3>
+        <p>Injects LLVM IR instructions directly into the codegen stream. Use with caution.</p>
+        <div class="code-block">
+            <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
+            <div class="code-block-body"><pre><span class="typ">int</span> x <span class="op">=</span> <span class="num">42</span><span class="op">;</span>
+<span class="kw">ir</span> {
+    <span class="str">"%res = add i32 $x, 1"</span>
+} <span class="op">[</span>x<span class="op">]</span><span class="op">;</span></pre></div>
+        </div>
+    </div>
+
+    <div class="docs-section" id="comments">
         <div class="section-eyebrow">Built-ins</div>
         <h2>Comments</h2>
         <p>Only single-line comments are supported. Use <code>//</code> to start a comment anywhere on a line.</p>
