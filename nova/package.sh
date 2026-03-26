@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-NAME="nova-lang-v2.0.1beta"
+NAME="nova-lang-v2.1.0beta"
 DIST_DIR="dist/$NAME"
 
 echo "📦 Packaging Nova..."

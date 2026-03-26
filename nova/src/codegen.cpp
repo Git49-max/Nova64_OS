@@ -785,6 +785,539 @@ static Function* getOrBuildNovaPrintf() {
     return fn;
 }
 
+// ── nova_scanf ────────────────────────────────────────────────────────────────
+// Implementação de scanf sem libc, usando read(2) via chamada externa.
+// Especificadores: %d %i %u %ld %li %lu %f %lf %c %s %%
+// Retorna número de conversões bem-sucedidas (i32).
+// ─────────────────────────────────────────────────────────────────────────────
+
+static Function* getOrDeclareRead() {
+    if (Function* f = llvmModule->getFunction("read")) return f;
+    Type* i32   = Type::getInt32Ty(ctx);
+    Type* i64   = Type::getInt64Ty(ctx);
+    Type* ptrTy = PointerType::getUnqual(ctx);
+    FunctionType* ft = FunctionType::get(i64, {i32, ptrTy, i64}, false);
+    return Function::Create(ft, Function::ExternalLinkage, "read", llvmModule.get());
+}
+
+template<typename BuilderT>
+static Value* emitReadByte(BuilderT& b) {
+    Function* readFn = getOrDeclareRead();
+    Type* i8  = Type::getInt8Ty(ctx);
+    Type* i32 = Type::getInt32Ty(ctx);
+    Type* i64 = Type::getInt64Ty(ctx);
+    Value* buf = b.CreateAlloca(i8, nullptr, "rdbuf");
+    Value* n   = b.CreateCall(readFn,
+        {ConstantInt::get(i32, 0), buf, ConstantInt::get(i64, 1)});
+    Value* ok  = b.CreateICmpEQ(n, ConstantInt::get(i64, 1), "read_ok");
+    Value* ch  = b.CreateLoad(i8, buf, "rd_ch");
+    return b.CreateSelect(ok, ch, ConstantInt::get(i8, 0), "rd_byte");
+}
+
+// Emite loop de skip de whitespace em bbSkip; salta para bbAfter quando
+// encontra o primeiro char não-ws, deixando-o em laAlloc.
+static void emitSkipWS(IRBuilder<>& b, Function* fn,
+                       BasicBlock* bbSkip, BasicBlock* bbAfter,
+                       Value* laAlloc) {
+    b.SetInsertPoint(bbSkip);
+    Type* i8 = Type::getInt8Ty(ctx);
+    Value* c    = emitReadByte(b);
+    b.CreateStore(c, laAlloc);
+    Value* isWs = b.CreateOr(
+        b.CreateOr(b.CreateICmpEQ(c, ConstantInt::get(i8,  9)),
+                   b.CreateICmpEQ(c, ConstantInt::get(i8, 10))),
+        b.CreateOr(b.CreateICmpEQ(c, ConstantInt::get(i8, 13)),
+                   b.CreateICmpEQ(c, ConstantInt::get(i8, 32))));
+    b.CreateCondBr(isWs, bbSkip, bbAfter);
+}
+
+// Emite loop de acumulação de dígitos decimais em i64.
+// bbDigLoop: checa se laAlloc é dígito; se sim, vai p/ bbDigAcc, senão para bbDone.
+// bbDigAcc: acumula acc = acc*10 + dig, lê próximo byte, volta p/ bbDigLoop.
+static void emitDigitLoop(IRBuilder<>& b, Function* fn,
+                          BasicBlock* bbDigLoop, BasicBlock* bbDigAcc,
+                          BasicBlock* bbDone,
+                          Value* laAlloc, Value* accAlloc) {
+    Type* i8  = Type::getInt8Ty(ctx);
+    Type* i64 = Type::getInt64Ty(ctx);
+
+    b.SetInsertPoint(bbDigLoop);
+    {
+        Value* c = b.CreateLoad(i8, laAlloc, "la");
+        b.CreateCondBr(
+            b.CreateAnd(b.CreateICmpUGE(c, ConstantInt::get(i8, (uint64_t)'0')),
+                        b.CreateICmpULE(c, ConstantInt::get(i8, (uint64_t)'9'))),
+            bbDigAcc, bbDone);
+    }
+    b.SetInsertPoint(bbDigAcc);
+    {
+        Value* c   = b.CreateLoad(i8, laAlloc, "la");
+        Value* dig = b.CreateSub(b.CreateZExt(c, i64), ConstantInt::get(i64, '0'));
+        Value* acc = b.CreateLoad(i64, accAlloc, "acc");
+        b.CreateStore(
+            b.CreateAdd(b.CreateMul(acc, ConstantInt::get(i64, 10)), dig),
+            accAlloc);
+        b.CreateStore(emitReadByte(b), laAlloc);
+        b.CreateBr(bbDigLoop);
+    }
+}
+
+static Function* getOrBuildNovaScanf() {
+    if (Function* f = llvmModule->getFunction("nova_scanf")) return f;
+
+    Type* i1    = Type::getInt1Ty(ctx);
+    Type* i8    = Type::getInt8Ty(ctx);
+    Type* i32   = Type::getInt32Ty(ctx);
+    Type* i64   = Type::getInt64Ty(ctx);
+    Type* dbl   = Type::getDoubleTy(ctx);
+    Type* flt   = Type::getFloatTy(ctx);
+    Type* ptrTy = PointerType::getUnqual(ctx);
+
+    FunctionType* ft = FunctionType::get(i32, {ptrTy}, true);
+    Function* fn = Function::Create(ft, Function::InternalLinkage,
+                                    "nova_scanf", llvmModule.get());
+    fn->addFnAttr(Attribute::NoUnwind);
+    Argument* fmtArg = &*fn->arg_begin();
+    fmtArg->setName("fmt");
+
+    // ── BasicBlocks ──────────────────────────────────────────────────────
+    BasicBlock* bbEntry   = BasicBlock::Create(ctx, "entry",     fn);
+    BasicBlock* bbLoop    = BasicBlock::Create(ctx, "loop",      fn);
+    BasicBlock* bbCheck   = BasicBlock::Create(ctx, "check",     fn);
+    BasicBlock* bbLitSkip = BasicBlock::Create(ctx, "lit_skip",  fn);
+    BasicBlock* bbReadSpc = BasicBlock::Create(ctx, "read_spc",  fn);
+    BasicBlock* bbLong    = BasicBlock::Create(ctx, "long_pfx",  fn);
+    BasicBlock* bbFmtD    = BasicBlock::Create(ctx, "fmt_d",     fn);
+    BasicBlock* bbFmtLD   = BasicBlock::Create(ctx, "fmt_ld",    fn);
+    BasicBlock* bbFmtU    = BasicBlock::Create(ctx, "fmt_u",     fn);
+    BasicBlock* bbFmtLU   = BasicBlock::Create(ctx, "fmt_lu",    fn);
+    BasicBlock* bbFmtF    = BasicBlock::Create(ctx, "fmt_f",     fn);
+    BasicBlock* bbFmtLF   = BasicBlock::Create(ctx, "fmt_lf",    fn);
+    BasicBlock* bbFmtC    = BasicBlock::Create(ctx, "fmt_c",     fn);
+    BasicBlock* bbFmtS    = BasicBlock::Create(ctx, "fmt_s",     fn);
+    BasicBlock* bbFmtPct  = BasicBlock::Create(ctx, "fmt_pct",   fn);
+    BasicBlock* bbFmtUnk  = BasicBlock::Create(ctx, "fmt_unk",   fn);
+    BasicBlock* bbNext    = BasicBlock::Create(ctx, "next",      fn);
+    BasicBlock* bbRet     = BasicBlock::Create(ctx, "ret",       fn);
+
+    // %d/%i sub-blocks
+    BasicBlock* bbDSkip   = BasicBlock::Create(ctx, "d_skip",    fn);
+    BasicBlock* bbDSign   = BasicBlock::Create(ctx, "d_sign",    fn);
+    BasicBlock* bbDSignCs = BasicBlock::Create(ctx, "d_sign_cs", fn);
+    BasicBlock* bbDLoop   = BasicBlock::Create(ctx, "d_loop",    fn);
+    BasicBlock* bbDAccum  = BasicBlock::Create(ctx, "d_accum",   fn);
+    BasicBlock* bbDStore  = BasicBlock::Create(ctx, "d_store",   fn);
+
+    // %ld/%li sub-blocks
+    BasicBlock* bbLDSkip  = BasicBlock::Create(ctx, "ld_skip",   fn);
+    BasicBlock* bbLDSign  = BasicBlock::Create(ctx, "ld_sign",   fn);
+    BasicBlock* bbLDSignCs= BasicBlock::Create(ctx, "ld_sign_cs",fn);
+    BasicBlock* bbLDLoop  = BasicBlock::Create(ctx, "ld_loop",   fn);
+    BasicBlock* bbLDAccum = BasicBlock::Create(ctx, "ld_accum",  fn);
+    BasicBlock* bbLDStore = BasicBlock::Create(ctx, "ld_store",  fn);
+
+    // %u sub-blocks
+    BasicBlock* bbUSkip   = BasicBlock::Create(ctx, "u_skip",    fn);
+    BasicBlock* bbULoop   = BasicBlock::Create(ctx, "u_loop",    fn);
+    BasicBlock* bbUAccum  = BasicBlock::Create(ctx, "u_accum",   fn);
+    BasicBlock* bbUStore  = BasicBlock::Create(ctx, "u_store",   fn);
+
+    // %lu sub-blocks
+    BasicBlock* bbLUSkip  = BasicBlock::Create(ctx, "lu_skip",   fn);
+    BasicBlock* bbLULoop  = BasicBlock::Create(ctx, "lu_loop",   fn);
+    BasicBlock* bbLUAccum = BasicBlock::Create(ctx, "lu_accum",  fn);
+    BasicBlock* bbLUStore = BasicBlock::Create(ctx, "lu_store",  fn);
+
+    // %f/%lf sub-blocks
+    BasicBlock* bbFSkip   = BasicBlock::Create(ctx, "f_skip",      fn);
+    BasicBlock* bbFSign   = BasicBlock::Create(ctx, "f_sign",      fn);
+    BasicBlock* bbFSignCs = BasicBlock::Create(ctx, "f_sign_cs",   fn);
+    BasicBlock* bbFILoop  = BasicBlock::Create(ctx, "f_int_loop",  fn);
+    BasicBlock* bbFIAccum = BasicBlock::Create(ctx, "f_int_accum", fn);
+    BasicBlock* bbFDot    = BasicBlock::Create(ctx, "f_dot",       fn);
+    BasicBlock* bbFDotCon = BasicBlock::Create(ctx, "f_dot_con",   fn);
+    BasicBlock* bbFFLoop  = BasicBlock::Create(ctx, "f_frac_loop", fn);
+    BasicBlock* bbFFAccum = BasicBlock::Create(ctx, "f_frac_accum",fn);
+    BasicBlock* bbFStFlt  = BasicBlock::Create(ctx, "f_st_flt",    fn);
+    BasicBlock* bbFStDbl  = BasicBlock::Create(ctx, "f_st_dbl",    fn);
+
+    // %s sub-blocks
+    BasicBlock* bbSSkip   = BasicBlock::Create(ctx, "s_skip",    fn);
+    BasicBlock* bbSLoop   = BasicBlock::Create(ctx, "s_loop",    fn);
+    BasicBlock* bbSAccum  = BasicBlock::Create(ctx, "s_accum",   fn);
+    BasicBlock* bbSStore  = BasicBlock::Create(ctx, "s_store",   fn);
+
+    // ── Entry ────────────────────────────────────────────────────────────
+    IRBuilder<> b(bbEntry);
+
+    ArrayType* vaTy = ArrayType::get(i8, 24);
+    Value* vaList = b.CreateAlloca(vaTy, nullptr, "va_list");
+    Value* vaPtr  = b.CreateBitCast(vaList, ptrTy, "va_ptr");
+    b.CreateCall(Intrinsic::getDeclaration(llvmModule.get(), Intrinsic::vastart, {ptrTy}),
+                 {vaPtr});
+
+    Value* convAlloc = b.CreateAlloca(i32,  nullptr, "conv");
+    Value* iIdx      = b.CreateAlloca(i32,  nullptr, "idx");
+    Value* laAlloc   = b.CreateAlloca(i8,   nullptr, "la");
+
+    Value* dVal   = b.CreateAlloca(i64,   nullptr, "d_val");
+    Value* dNeg   = b.CreateAlloca(i1,    nullptr, "d_neg");
+    Value* dDest  = b.CreateAlloca(ptrTy, nullptr, "d_dest");
+
+    Value* ldVal  = b.CreateAlloca(i64,   nullptr, "ld_val");
+    Value* ldNeg  = b.CreateAlloca(i1,    nullptr, "ld_neg");
+    Value* ldDest = b.CreateAlloca(ptrTy, nullptr, "ld_dest");
+
+    Value* uVal   = b.CreateAlloca(i64,   nullptr, "u_val");
+    Value* uDest  = b.CreateAlloca(ptrTy, nullptr, "u_dest");
+
+    Value* luVal  = b.CreateAlloca(i64,   nullptr, "lu_val");
+    Value* luDest = b.CreateAlloca(ptrTy, nullptr, "lu_dest");
+
+    Value* fIVal  = b.CreateAlloca(i64,   nullptr, "f_ival");  // parte inteira (i64)
+    Value* fFrac  = b.CreateAlloca(dbl,   nullptr, "f_frac");
+    Value* fFDiv  = b.CreateAlloca(dbl,   nullptr, "f_fdiv");
+    Value* fNeg   = b.CreateAlloca(i1,    nullptr, "f_neg");
+    Value* fDest  = b.CreateAlloca(ptrTy, nullptr, "f_dest");
+    Value* fIsLf  = b.CreateAlloca(i1,    nullptr, "f_islf");
+
+    Value* sDest  = b.CreateAlloca(ptrTy, nullptr, "s_dest");
+    Value* sIdx   = b.CreateAlloca(i32,   nullptr, "s_idx");
+
+    b.CreateStore(ConstantInt::get(i32, 0), convAlloc);
+    b.CreateStore(ConstantInt::get(i32, 0), iIdx);
+    b.CreateStore(ConstantInt::get(i8,  0), laAlloc);
+    b.CreateBr(bbLoop);
+
+    // ── Loop principal ────────────────────────────────────────────────────
+    b.SetInsertPoint(bbLoop);
+    {
+        Value* idx = b.CreateLoad(i32, iIdx, "idx");
+        Value* gep = b.CreateGEP(i8, fmtArg, idx, "gep");
+        Value* ch  = b.CreateLoad(i8, gep, "ch");
+        b.CreateCondBr(b.CreateICmpEQ(ch, ConstantInt::get(i8, 0)), bbRet, bbCheck);
+    }
+    b.SetInsertPoint(bbCheck);
+    {
+        Value* idx = b.CreateLoad(i32, iIdx, "idx");
+        Value* gep = b.CreateGEP(i8, fmtArg, idx, "gep2");
+        Value* ch  = b.CreateLoad(i8, gep, "ch2");
+        b.CreateCondBr(
+            b.CreateICmpEQ(ch, ConstantInt::get(i8, (uint64_t)'%')),
+            bbReadSpc, bbLitSkip);
+    }
+    b.SetInsertPoint(bbLitSkip);
+    b.CreateBr(bbNext);
+
+    b.SetInsertPoint(bbReadSpc);
+    {
+        Value* idx  = b.CreateLoad(i32, iIdx, "idx");
+        Value* idx1 = b.CreateAdd(idx, ConstantInt::get(i32, 1));
+        b.CreateStore(idx1, iIdx);
+        Value* gep  = b.CreateGEP(i8, fmtArg, idx1, "spc_gep");
+        Value* spc  = b.CreateLoad(i8, gep, "spc");
+        SwitchInst* sw = b.CreateSwitch(spc, bbFmtUnk, 10);
+        sw->addCase(cast<ConstantInt>(ConstantInt::get(i8, (uint64_t)'d')), bbFmtD);
+        sw->addCase(cast<ConstantInt>(ConstantInt::get(i8, (uint64_t)'i')), bbFmtD);
+        sw->addCase(cast<ConstantInt>(ConstantInt::get(i8, (uint64_t)'u')), bbFmtU);
+        sw->addCase(cast<ConstantInt>(ConstantInt::get(i8, (uint64_t)'f')), bbFmtF);
+        sw->addCase(cast<ConstantInt>(ConstantInt::get(i8, (uint64_t)'g')), bbFmtF);
+        sw->addCase(cast<ConstantInt>(ConstantInt::get(i8, (uint64_t)'e')), bbFmtF);
+        sw->addCase(cast<ConstantInt>(ConstantInt::get(i8, (uint64_t)'c')), bbFmtC);
+        sw->addCase(cast<ConstantInt>(ConstantInt::get(i8, (uint64_t)'s')), bbFmtS);
+        sw->addCase(cast<ConstantInt>(ConstantInt::get(i8, (uint64_t)'%')), bbFmtPct);
+        sw->addCase(cast<ConstantInt>(ConstantInt::get(i8, (uint64_t)'l')), bbLong);
+    }
+    b.SetInsertPoint(bbLong);
+    {
+        Value* idx  = b.CreateLoad(i32, iIdx, "idx");
+        Value* idx1 = b.CreateAdd(idx, ConstantInt::get(i32, 1));
+        b.CreateStore(idx1, iIdx);
+        Value* gep  = b.CreateGEP(i8, fmtArg, idx1, "l_gep");
+        Value* lspc = b.CreateLoad(i8, gep, "l_spc");
+        SwitchInst* sw2 = b.CreateSwitch(lspc, bbFmtUnk, 4);
+        sw2->addCase(cast<ConstantInt>(ConstantInt::get(i8, (uint64_t)'d')), bbFmtLD);
+        sw2->addCase(cast<ConstantInt>(ConstantInt::get(i8, (uint64_t)'i')), bbFmtLD);
+        sw2->addCase(cast<ConstantInt>(ConstantInt::get(i8, (uint64_t)'u')), bbFmtLU);
+        sw2->addCase(cast<ConstantInt>(ConstantInt::get(i8, (uint64_t)'f')), bbFmtLF);
+    }
+    b.SetInsertPoint(bbNext);
+    {
+        Value* idx = b.CreateLoad(i32, iIdx, "idx");
+        b.CreateStore(b.CreateAdd(idx, ConstantInt::get(i32, 1)), iIdx);
+        b.CreateBr(bbLoop);
+    }
+
+    // ── %d/%i ─────────────────────────────────────────────────────────────
+    b.SetInsertPoint(bbFmtD);
+    b.CreateStore(b.CreateVAArg(vaPtr, ptrTy, "va_d"), dDest);
+    b.CreateStore(ConstantInt::get(i64, 0), dVal);
+    b.CreateStore(ConstantInt::getFalse(ctx), dNeg);
+    b.CreateBr(bbDSkip);
+
+    emitSkipWS(b, fn, bbDSkip, bbDSign, laAlloc);
+
+    b.SetInsertPoint(bbDSign);
+    {
+        Value* c = b.CreateLoad(i8, laAlloc, "la");
+        Value* isMinus = b.CreateICmpEQ(c, ConstantInt::get(i8, (uint64_t)'-'));
+        b.CreateCondBr(
+            b.CreateOr(isMinus, b.CreateICmpEQ(c, ConstantInt::get(i8, (uint64_t)'+'))),
+            bbDSignCs, bbDLoop);
+    }
+    b.SetInsertPoint(bbDSignCs);
+    {
+        Value* c = b.CreateLoad(i8, laAlloc, "la");
+        b.CreateStore(b.CreateICmpEQ(c, ConstantInt::get(i8, (uint64_t)'-')), dNeg);
+        b.CreateStore(emitReadByte(b), laAlloc);
+        b.CreateBr(bbDLoop);
+    }
+    emitDigitLoop(b, fn, bbDLoop, bbDAccum, bbDStore, laAlloc, dVal);
+    b.SetInsertPoint(bbDStore);
+    {
+        Value* v   = b.CreateLoad(i64, dVal, "v");
+        Value* neg = b.CreateLoad(i1,  dNeg, "neg");
+        Value* fin = b.CreateSelect(neg, b.CreateNeg(v), v, "fin");
+        b.CreateStore(b.CreateTrunc(fin, i32, "v32"),
+                      b.CreateLoad(ptrTy, dDest, "dst"));
+        b.CreateStore(b.CreateAdd(b.CreateLoad(i32, convAlloc), ConstantInt::get(i32, 1)), convAlloc);
+        b.CreateBr(bbNext);
+    }
+
+    // ── %ld/%li ───────────────────────────────────────────────────────────
+    b.SetInsertPoint(bbFmtLD);
+    b.CreateStore(b.CreateVAArg(vaPtr, ptrTy, "va_ld"), ldDest);
+    b.CreateStore(ConstantInt::get(i64, 0), ldVal);
+    b.CreateStore(ConstantInt::getFalse(ctx), ldNeg);
+    b.CreateBr(bbLDSkip);
+
+    emitSkipWS(b, fn, bbLDSkip, bbLDSign, laAlloc);
+
+    b.SetInsertPoint(bbLDSign);
+    {
+        Value* c = b.CreateLoad(i8, laAlloc, "la");
+        Value* isMinus = b.CreateICmpEQ(c, ConstantInt::get(i8, (uint64_t)'-'));
+        b.CreateCondBr(
+            b.CreateOr(isMinus, b.CreateICmpEQ(c, ConstantInt::get(i8, (uint64_t)'+'))),
+            bbLDSignCs, bbLDLoop);
+    }
+    b.SetInsertPoint(bbLDSignCs);
+    {
+        Value* c = b.CreateLoad(i8, laAlloc, "la");
+        b.CreateStore(b.CreateICmpEQ(c, ConstantInt::get(i8, (uint64_t)'-')), ldNeg);
+        b.CreateStore(emitReadByte(b), laAlloc);
+        b.CreateBr(bbLDLoop);
+    }
+    emitDigitLoop(b, fn, bbLDLoop, bbLDAccum, bbLDStore, laAlloc, ldVal);
+    b.SetInsertPoint(bbLDStore);
+    {
+        Value* v   = b.CreateLoad(i64, ldVal, "v");
+        Value* neg = b.CreateLoad(i1,  ldNeg, "neg");
+        Value* fin = b.CreateSelect(neg, b.CreateNeg(v), v, "fin");
+        b.CreateStore(fin, b.CreateLoad(ptrTy, ldDest, "dst"));
+        b.CreateStore(b.CreateAdd(b.CreateLoad(i32, convAlloc), ConstantInt::get(i32, 1)), convAlloc);
+        b.CreateBr(bbNext);
+    }
+
+    // ── %u ────────────────────────────────────────────────────────────────
+    b.SetInsertPoint(bbFmtU);
+    b.CreateStore(b.CreateVAArg(vaPtr, ptrTy, "va_u"), uDest);
+    b.CreateStore(ConstantInt::get(i64, 0), uVal);
+    b.CreateBr(bbUSkip);
+
+    emitSkipWS(b, fn, bbUSkip, bbULoop, laAlloc);
+    emitDigitLoop(b, fn, bbULoop, bbUAccum, bbUStore, laAlloc, uVal);
+    b.SetInsertPoint(bbUStore);
+    {
+        Value* v = b.CreateLoad(i64, uVal, "v");
+        b.CreateStore(b.CreateTrunc(v, i32, "v32"),
+                      b.CreateLoad(ptrTy, uDest, "dst"));
+        b.CreateStore(b.CreateAdd(b.CreateLoad(i32, convAlloc), ConstantInt::get(i32, 1)), convAlloc);
+        b.CreateBr(bbNext);
+    }
+
+    // ── %lu ───────────────────────────────────────────────────────────────
+    b.SetInsertPoint(bbFmtLU);
+    b.CreateStore(b.CreateVAArg(vaPtr, ptrTy, "va_lu"), luDest);
+    b.CreateStore(ConstantInt::get(i64, 0), luVal);
+    b.CreateBr(bbLUSkip);
+
+    emitSkipWS(b, fn, bbLUSkip, bbLULoop, laAlloc);
+    emitDigitLoop(b, fn, bbLULoop, bbLUAccum, bbLUStore, laAlloc, luVal);
+    b.SetInsertPoint(bbLUStore);
+    {
+        Value* v = b.CreateLoad(i64, luVal, "v");
+        b.CreateStore(v, b.CreateLoad(ptrTy, luDest, "dst"));
+        b.CreateStore(b.CreateAdd(b.CreateLoad(i32, convAlloc), ConstantInt::get(i32, 1)), convAlloc);
+        b.CreateBr(bbNext);
+    }
+
+    // ── %f / %lf ──────────────────────────────────────────────────────────
+    // Ambos compartilham os mesmos sub-blocos de parse. fIsLf decide o store.
+    b.SetInsertPoint(bbFmtF);
+    b.CreateStore(b.CreateVAArg(vaPtr, ptrTy, "va_f"), fDest);
+    b.CreateStore(ConstantInt::get(i64, 0), fIVal);
+    b.CreateStore(ConstantFP::get(dbl, 0.0), fFrac);
+    b.CreateStore(ConstantFP::get(dbl, 10.0), fFDiv);
+    b.CreateStore(ConstantInt::getFalse(ctx), fNeg);
+    b.CreateStore(ConstantInt::getFalse(ctx), fIsLf);
+    b.CreateBr(bbFSkip);
+
+    b.SetInsertPoint(bbFmtLF);
+    b.CreateStore(b.CreateVAArg(vaPtr, ptrTy, "va_lf"), fDest);
+    b.CreateStore(ConstantInt::get(i64, 0), fIVal);
+    b.CreateStore(ConstantFP::get(dbl, 0.0), fFrac);
+    b.CreateStore(ConstantFP::get(dbl, 10.0), fFDiv);
+    b.CreateStore(ConstantInt::getFalse(ctx), fNeg);
+    b.CreateStore(ConstantInt::getTrue(ctx), fIsLf);
+    b.CreateBr(bbFSkip);
+
+    emitSkipWS(b, fn, bbFSkip, bbFSign, laAlloc);
+
+    b.SetInsertPoint(bbFSign);
+    {
+        Value* c = b.CreateLoad(i8, laAlloc, "la");
+        Value* isMinus = b.CreateICmpEQ(c, ConstantInt::get(i8, (uint64_t)'-'));
+        b.CreateCondBr(
+            b.CreateOr(isMinus, b.CreateICmpEQ(c, ConstantInt::get(i8, (uint64_t)'+'))),
+            bbFSignCs, bbFILoop);
+    }
+    b.SetInsertPoint(bbFSignCs);
+    {
+        Value* c = b.CreateLoad(i8, laAlloc, "la");
+        b.CreateStore(b.CreateICmpEQ(c, ConstantInt::get(i8, (uint64_t)'-')), fNeg);
+        b.CreateStore(emitReadByte(b), laAlloc);
+        b.CreateBr(bbFILoop);
+    }
+    // Parte inteira do float (acumula em fIVal como i64, converte depois)
+    emitDigitLoop(b, fn, bbFILoop, bbFIAccum, bbFDot, laAlloc, fIVal);
+    b.SetInsertPoint(bbFDot);
+    {
+        Value* c = b.CreateLoad(i8, laAlloc, "la");
+        b.CreateCondBr(
+            b.CreateICmpEQ(c, ConstantInt::get(i8, (uint64_t)'.')),
+            bbFDotCon, bbFStFlt);
+    }
+    b.SetInsertPoint(bbFDotCon);
+    b.CreateStore(emitReadByte(b), laAlloc);
+    b.CreateBr(bbFFLoop);
+    b.SetInsertPoint(bbFFLoop);
+    {
+        Value* c = b.CreateLoad(i8, laAlloc, "la");
+        b.CreateCondBr(
+            b.CreateAnd(b.CreateICmpUGE(c, ConstantInt::get(i8, (uint64_t)'0')),
+                        b.CreateICmpULE(c, ConstantInt::get(i8, (uint64_t)'9'))),
+            bbFFAccum, bbFStFlt);
+    }
+    b.SetInsertPoint(bbFFAccum);
+    {
+        Value* c   = b.CreateLoad(i8, laAlloc, "la");
+        Value* dig = b.CreateUIToFP(
+            b.CreateSub(b.CreateZExt(c, i32), ConstantInt::get(i32, '0')), dbl);
+        Value* div = b.CreateLoad(dbl, fFDiv, "div");
+        Value* fr  = b.CreateLoad(dbl, fFrac, "fr");
+        b.CreateStore(b.CreateFAdd(fr, b.CreateFDiv(dig, div)), fFrac);
+        b.CreateStore(b.CreateFMul(div, ConstantFP::get(dbl, 10.0)), fFDiv);
+        b.CreateStore(emitReadByte(b), laAlloc);
+        b.CreateBr(bbFFLoop);
+    }
+    // bbFStFlt: calcula valor final e bifurca para store float ou double
+    {
+        BasicBlock* bbDoStoreFlt = BasicBlock::Create(ctx, "do_st_flt", fn);
+        BasicBlock* bbDoStoreDbl = BasicBlock::Create(ctx, "do_st_dbl", fn);
+
+        b.SetInsertPoint(bbFStFlt);
+        Value* ival  = b.CreateSIToFP(b.CreateLoad(i64, fIVal, "iv"), dbl, "iv_f");
+        Value* frac  = b.CreateLoad(dbl, fFrac, "fr");
+        Value* total = b.CreateFAdd(ival, frac, "tot");
+        Value* neg   = b.CreateLoad(i1,  fNeg,  "neg");
+        Value* final = b.CreateSelect(neg, b.CreateFNeg(total), total, "fin");
+        Value* islf  = b.CreateLoad(i1,  fIsLf, "islf");
+        Value* dst   = b.CreateLoad(ptrTy, fDest, "dst");
+        Value* asF   = b.CreateFPTrunc(final, flt, "asF");
+        b.CreateCondBr(islf, bbDoStoreDbl, bbDoStoreFlt);
+
+        IRBuilder<> bF(bbDoStoreFlt);
+        bF.CreateStore(asF, dst);
+        bF.CreateStore(bF.CreateAdd(bF.CreateLoad(i32, convAlloc), ConstantInt::get(i32, 1)), convAlloc);
+        bF.CreateBr(bbNext);
+
+        IRBuilder<> bD(bbDoStoreDbl);
+        bD.CreateStore(final, dst);
+        bD.CreateStore(bD.CreateAdd(bD.CreateLoad(i32, convAlloc), ConstantInt::get(i32, 1)), convAlloc);
+        bD.CreateBr(bbNext);
+    }
+    // bbFStDbl não é alcançado pelo fluxo acima, mas precisa de terminador
+    b.SetInsertPoint(bbFStDbl);
+    b.CreateBr(bbNext);
+
+    // ── %c ────────────────────────────────────────────────────────────────
+    b.SetInsertPoint(bbFmtC);
+    {
+        Value* dst = b.CreateVAArg(vaPtr, ptrTy, "va_c");
+        b.CreateStore(emitReadByte(b), dst);
+        b.CreateStore(b.CreateAdd(b.CreateLoad(i32, convAlloc), ConstantInt::get(i32, 1)), convAlloc);
+        b.CreateBr(bbNext);
+    }
+
+    // ── %s ────────────────────────────────────────────────────────────────
+    b.SetInsertPoint(bbFmtS);
+    b.CreateStore(b.CreateVAArg(vaPtr, ptrTy, "va_s"), sDest);
+    b.CreateStore(ConstantInt::get(i32, 0), sIdx);
+    b.CreateBr(bbSSkip);
+
+    emitSkipWS(b, fn, bbSSkip, bbSLoop, laAlloc);
+
+    b.SetInsertPoint(bbSLoop);
+    {
+        Value* c = b.CreateLoad(i8, laAlloc, "la");
+        Value* isEnd = b.CreateOr(
+            b.CreateOr(b.CreateICmpEQ(c, ConstantInt::get(i8,  0)),
+                       b.CreateICmpEQ(c, ConstantInt::get(i8, 32))),
+            b.CreateOr(b.CreateICmpEQ(c, ConstantInt::get(i8,  9)),
+                       b.CreateOr(b.CreateICmpEQ(c, ConstantInt::get(i8, 10)),
+                                  b.CreateICmpEQ(c, ConstantInt::get(i8, 13)))));
+        b.CreateCondBr(isEnd, bbSStore, bbSAccum);
+    }
+    b.SetInsertPoint(bbSAccum);
+    {
+        Value* c   = b.CreateLoad(i8, laAlloc, "la");
+        Value* dst = b.CreateLoad(ptrTy, sDest, "dst");
+        Value* si  = b.CreateLoad(i32, sIdx, "si");
+        b.CreateStore(c, b.CreateGEP(i8, dst, si, "s_gep"));
+        b.CreateStore(b.CreateAdd(si, ConstantInt::get(i32, 1)), sIdx);
+        b.CreateStore(emitReadByte(b), laAlloc);
+        b.CreateBr(bbSLoop);
+    }
+    b.SetInsertPoint(bbSStore);
+    {
+        Value* dst = b.CreateLoad(ptrTy, sDest, "dst");
+        Value* si  = b.CreateLoad(i32, sIdx, "si");
+        b.CreateStore(ConstantInt::get(i8, 0), b.CreateGEP(i8, dst, si, "null_gep"));
+        b.CreateStore(b.CreateAdd(b.CreateLoad(i32, convAlloc), ConstantInt::get(i32, 1)), convAlloc);
+        b.CreateBr(bbNext);
+    }
+
+    // ── %% ───────────────────────────────────────────────────────────────
+    b.SetInsertPoint(bbFmtPct);
+    emitReadByte(b); // consome um '%' do stdin
+    b.CreateBr(bbNext);
+
+    // ── especificador desconhecido ─────────────────────────────────────────
+    b.SetInsertPoint(bbFmtUnk);
+    b.CreateBr(bbNext);
+
+    // ── ret ───────────────────────────────────────────────────────────────
+    b.SetInsertPoint(bbRet);
+    b.CreateCall(Intrinsic::getDeclaration(llvmModule.get(), Intrinsic::vaend, {ptrTy}),
+                 {vaPtr});
+    b.CreateRet(b.CreateLoad(i32, convAlloc, "result"));
+
+    verifyFunction(*fn);
+    return fn;
+}
+
+
 // Resolve um nome possivelmente encadeado (ex: "L.start" ou "L.start.inner")
 // para o ponteiro do struct e seu tipo, navegando pelos campos via GEP.
 // Retorna {ponteiro, typeName} do struct final, ou {nullptr, ""} se não encontrado.
@@ -1113,7 +1646,15 @@ static Value* codegenExpr(const ASTNode* node) {
     if (auto* n = dynamic_cast<const CallNode*>(node)) {
         calledFunctions.insert(n->name);
 
-        bool isPrintf = nhDeclaredBuiltins.count(n->name) > 0;
+        bool isPrintf = nhDeclaredBuiltins.count(n->name) > 0 &&
+            (n->name == "printf" ||
+             (n->name.size() >= 8 && n->name.substr(n->name.size()-8) == "::printf") ||
+             n->name == "std::printf");
+        bool isScanf  = nhDeclaredBuiltins.count(n->name) > 0 &&
+            (n->name == "scanf" ||
+             (n->name.size() >= 7 && n->name.substr(n->name.size()-7) == "::scanf") ||
+             n->name == "std::scanf");
+
         if (isPrintf) {
             Function* npf = getOrBuildNovaPrintf();
             std::vector<Value*> args;
@@ -1127,6 +1668,16 @@ static Value* codegenExpr(const ASTNode* node) {
                 args.push_back(v);
             }
             return builder.CreateCall(npf->getFunctionType(), npf, args);
+        }
+
+        if (isScanf) {
+            Function* nsf = getOrBuildNovaScanf();
+            std::vector<Value*> args;
+            for (auto& arg : n->args) {
+                Value* v = codegenExpr(arg.get());
+                args.push_back(v);
+            }
+            return builder.CreateCall(nsf->getFunctionType(), nsf, args);
         }
 
         // Verifica se a função retorna struct — se sim, não pode ser usada como expressão diretamente
@@ -2718,14 +3269,17 @@ void codegenProgram(const ProgramNode& program, const std::string& outputFile,
             // Declarar "std::printf" como ExternalLinkage faria o linker tentar resolvê-lo.
             {
                 const std::string& fn = fd->name;
-                // Considera builtin qualquer declaração de "printf" com ou sem namespace
+                // Considera builtin qualquer declaração de "printf"/"scanf" com ou sem namespace
                 bool isBuiltin = (fn == "printf") ||
                     (fn.size() >= 8 && fn.substr(fn.size() - 8) == "::printf") ||
-                    fn == "std::printf";
+                    fn == "std::printf" ||
+                    (fn == "scanf") ||
+                    (fn.size() >= 7 && fn.substr(fn.size() - 7) == "::scanf") ||
+                    fn == "std::scanf";
                 if (isBuiltin) {
                     // Apenas registra que este builtin foi declarado via .nh.
                     // A interceptação em CallNode usa esse set para validar a chamada.
-                    // Não cria símbolo LLVM — o codegen gera nova_printf diretamente.
+                    // Não cria símbolo LLVM — o codegen gera nova_printf/nova_scanf diretamente.
                     nhDeclaredBuiltins.insert(fn);
                     continue;
                 }

@@ -39,6 +39,7 @@ struct FnParamInfo {
     bool isRef;           // true se o parâmetro é &T (imutável)
 };
 static std::map<std::string, std::vector<FnParamInfo>> fnSignatures;
+static std::set<std::string> variadicFunctions; // funções com parâmetro variádico (...)
 static std::map<std::string, std::string> declaredVarStructType;
 
 // Constrói FnParamInfo a partir de um ParamNode já parseado.
@@ -343,8 +344,9 @@ static void checkCallSite(const std::string& fnName,
     if (it == fnSignatures.end()) return; // função desconhecida (externa etc.)
 
     const auto& sig = it->second;
-    // Aridade
-    if (args.size() != sig.size()) {
+    // Aridade — funções variádicas aceitam qualquer número de args >= params fixos
+    bool isVariadic = variadicFunctions.count(fnName) > 0;
+    if (!isVariadic && args.size() != sig.size()) {
         std::string ln = getSourceLine(callLine);
         std::string note = "function '" + fnName + "' expects " +
                            std::to_string(sig.size()) + " argument" +
@@ -1545,10 +1547,12 @@ static NodePtr parseStatement() {
 // Também suporta `&self` e `&mut self` como primeiro parâmetro (impl methods)
 static std::vector<ParamNode> parseFnParams(const std::string& fnName,
                                              int tokLine, int tokCol,
-                                             bool* hasRefSelf = nullptr) {
+                                             bool* hasRefSelf = nullptr,
+                                             bool* outIsVariadic = nullptr) {
     eat(TOKEN_LPAREN);
     std::vector<ParamNode> params;
     if (hasRefSelf) *hasRefSelf = false;
+    if (outIsVariadic) *outIsVariadic = false;
 
     while (current.type != TOKEN_RPAREN) {
         if (current.type == TOKEN_EOF)
@@ -1559,6 +1563,7 @@ static std::vector<ParamNode> parseFnParams(const std::string& fnName,
 
         // Variádico: ...
         if (current.type == TOKEN_ELLIPSIS) {
+            if (outIsVariadic) *outIsVariadic = true;
             current = nextToken();
             break;
         }
@@ -1749,8 +1754,7 @@ static std::vector<NodePtr> parseNhFile(const std::string& nhPath,
             current = nextToken();
             std::string name = eat(TOKEN_IDENT).value;
             bool isVariadic = false;
-            auto params = parseFnParams(name, tl, tc);
-            // Verifica variádico (parseFnParams consome ..., mas não seta flag)
+            auto params = parseFnParams(name, tl, tc, nullptr, &isVariadic);
             DataType retType = parseFnReturn();
             std::string retStructTypeName = (retType == DataType::Custom) ? lastCustomTypeName : "";
             eat(TOKEN_SEMI);
@@ -1761,6 +1765,10 @@ static std::vector<NodePtr> parseNhFile(const std::string& nhPath,
                 for (const auto& p : params) sig.push_back(buildParamInfo(p));
                 fnSignatures[qualName] = sig;
                 if (qualName != name) fnSignatures[name] = sig;
+                if (isVariadic) {
+                    variadicFunctions.insert(qualName);
+                    if (qualName != name) variadicFunctions.insert(name);
+                }
             }
             decls.push_back(std::make_unique<FuncDeclNode>(
                 retType, retStructTypeName, qualName, std::move(params), isVariadic));
@@ -1847,6 +1855,10 @@ static std::vector<NodePtr> parseNhFile(const std::string& nhPath,
                     for (const auto& p : params) sig.push_back(buildParamInfo(p));
                     fnSignatures[qualName] = sig;
                     if (qualName != name) fnSignatures[name] = sig;
+                    if (isVariadic) {
+                        variadicFunctions.insert(qualName);
+                        if (qualName != name) variadicFunctions.insert(name);
+                    }
                 }
                 decls.push_back(std::make_unique<FuncDeclNode>(
                     retType, retStructTypeName, qualName, std::move(params), isVariadic));
@@ -2013,6 +2025,7 @@ ProgramNode parseProgram(const std::string& source, const std::string& filename)
     declaredStructNames.clear();
     immutableVars.clear();
     fnSignatures.clear();
+    variadicFunctions.clear();
     declaredVarStructType.clear();
     initLexer(source);
     current = nextToken();

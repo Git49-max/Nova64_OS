@@ -1,0 +1,15 @@
+#include <stdio.nh>
+#include <math.nh>
+
+fn yey(x: i32){
+    std::printf("%d\n", x);
+}
+fn main(){
+    let mut x: i32 = 0;
+    std::printf("Olá! Digite um número: ");
+    std::scanf("%d", &x);
+    std::printf("Você digitou: %d\n", x);
+    yey(x);
+    let resultado: f64 = std::sqrt(x);
+    std::printf("A raíz quadrada de %d é: %f\n", x, resultado);
+}
