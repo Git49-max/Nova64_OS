@@ -1,0 +1,50 @@
+double sqrt(int n) {
+    double x = (double)n;
+    double guess = x / 2.0;
+    double diff = guess * guess - x;
+    if(diff < 0.0) then {
+        diff = diff * (1.0 - 2.0);
+    }
+    while(diff > 0.000001) {
+        guess = (guess + x / guess) / 2.0;
+        diff = guess * guess - x;
+        if(diff < 0.0) then {
+            diff = diff * (1.0 - 2.0);
+        }
+    }
+    return guess;
+}
+
+double sqrt(float n) {
+    double x = (double)n;
+    double guess = x / 2.0;
+    double diff = guess * guess - x;
+    if(diff < 0.0) then {
+        diff = diff * (1.0 - 2.0);
+    }
+    while(diff > 0.000001) {
+        guess = (guess + x / guess) / 2.0;
+        diff = guess * guess - x;
+        if(diff < 0.0) then {
+            diff = diff * (1.0 - 2.0);
+        }
+    }
+    return guess;
+}
+
+double sqrt(double n) {
+    double guess = n / 2.0;
+    double diff = guess * guess - n;
+    if(diff < 0.0) then {
+        diff = diff * (1.0 - 2.0);
+    }
+    while(diff > 0.000001) {
+        guess = (guess + n / guess) / 2.0;
+        diff = guess * guess - n;
+        if(diff < 0.0) then {
+            diff = diff * (1.0 - 2.0);
+        }
+    }
+    return guess;
+}
+

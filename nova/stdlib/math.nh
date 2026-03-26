@@ -1,0 +1,4 @@
+namespace std;
+
+double sqrt(double n);
+double sqrt(int n);

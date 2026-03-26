@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stellar — A Deterministic Systems Language</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,600;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<!-- Fullscreen animated terminal background -->
+<div class="terminal-bg">
+    <div class="terminal-overlay"></div>
+    <pre id="terminal"><code id="typing"></code></pre>
+</div>
+
+<!-- Nav -->
+<nav>
+    <div class="logo">stellar</div>
+    <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="docs.html">Docs</a>
+        <a href="download.html" class="cta">Download</a>
+    </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+    <div class="hero-label">Systems Programming Language</div>
+    <h1>Precision.<br><span>No magic.</span></h1>
+    <p class="hero-desc">
+        A deterministic, C-like language compiled to a compact<br>
+        virtual machine. No GC. No hidden allocations.<br>
+        Explicit control over everything.
+    </p>
+    <div class="hero-actions">
+        <a href="download.html" class="btn btn-primary">↓ Download v1.1.0</a>
+        <a href="docs.html" class="btn btn-ghost">Read the Docs →</a>
+    </div>
+    <div class="scroll-hint">SCROLL</div>
+</section>
+
+<!-- Metrics -->
+<div class="metrics">
+    <div class="metric" style="animation-delay:0.1s">
+        <div class="metric-num">2<span> types</span></div>
+        <div class="metric-label">int &amp; let — nothing else</div>
+    </div>
+    <div class="metric" style="animation-delay:0.2s">
+        <div class="metric-num">0<span> GC</span></div>
+        <div class="metric-label">No garbage collection</div>
+    </div>
+    <div class="metric" style="animation-delay:0.3s">
+        <div class="metric-num">1<span> pass</span></div>
+        <div class="metric-label">Single-pass compiler</div>
+    </div>
+</div>
+
+<!-- Features -->
+<section class="section" id="features">
+    <div class="section-label">Language Design</div>
+    <h2 class="section-title">Built for clarity,<br>Built for you.</h2>
+    <div class="features-grid">
+        <div class="feature-card">
+            <div class="feature-icon">01</div>
+            <div class="feature-title">Explicit Numeric Types</div>
+            <div class="feature-desc">Two types, zero ambiguity. <code>int</code> for integers, <code>let</code> for double-precision floats. You always know what you're working with.</div>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">02</div>
+            <div class="feature-title">Deterministic Execution</div>
+            <div class="feature-desc">Same input, same output, every time. No runtime surprises, no non-deterministic GC pauses.</div>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">03</div>
+            <div class="feature-title">Structured Control Flow</div>
+            <div class="feature-desc">Clean <code>if/else</code> and <code>while</code> with proper scoping.</div>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">04</div>
+            <div class="feature-title">Manual Memory</div>
+            <div class="feature-desc">Arrays are explicitly sized. No hidden heap activity. You declare it, you own it.</div>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">05</div>
+            <div class="feature-title">Compact VM Target</div>
+            <div class="feature-desc">Compiles to a tight bytecode format. Runs on the Stellar VM — small, fast, embeddable.</div>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">06</div>
+            <div class="feature-title">Binary Encryption</div>
+            <div class="feature-desc">Obfuscate compiled binaries with <code>--encrypt &lt;key&gt;</code>. No key, no execution.</div>
+        </div>
+    </div>
+</section>
+
+<!-- Code sample -->
+<section class="code-section" id="example">
+    <div style="padding: 0 0 0 0; max-width: 800px;">
+        <div class="section-label">Example</div>
+        <h2 class="section-title" style="margin-bottom: 32px;">Sieve of Eratosthenes</h2>
+        <div class="code-window">
+            <div class="code-titlebar">
+                <div class="dot r"></div>
+                <div class="dot y"></div>
+                <div class="dot g"></div>
+                <div class="code-filename">primes.ste</div>
+            </div>
+            <div class="code-body"><pre><span class="cmt">// Mark composites up to 100000</span>
+<span class="kw">int</span> is_prime <span class="op">=</span> [<span class="num">100001</span>];
+<span class="kw">int</span> i <span class="op">=</span> <span class="num">2</span>;
+
+<span class="kw">while</span> (i <span class="op">&lt;</span> <span class="num">100001</span>) {
+    <span class="kw">int</span> status <span class="op">=</span> is_prime[i];
+    <span class="kw">if</span> (status <span class="op">==</span> <span class="num">0</span>) {
+        <span class="kw">int</span> j <span class="op">=</span> i;
+        j <span class="op">*=</span> <span class="num">2</span>;
+        <span class="kw">while</span> (j <span class="op">&lt;</span> <span class="num">100001</span>) {
+            is_prime[j] <span class="op">=</span> <span class="num">1</span>;
+            j <span class="op">+=</span> i;
+        }
+    }
+    i<span class="op">++</span>;
+}
+
+<span class="fn">print</span>(<span class="str">"done."</span>);</pre></div>
+        </div>
+    </div>
+</section>
+
+<!-- Footer -->
+<footer>
+    <div class="footer-brand"><span>▸</span> stellar lang</div>
+    <div class="footer-links">
+        <a href="docs.html">Documentation</a>
+        <a href="download.html">Download</a>
+    </div>
+</footer>
+
+<script>
+/* ── Scroll reveals ── */
+const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+        if (e.isIntersecting) {
+            e.target.classList.add('visible');
+            observer.unobserve(e.target);
+        }
+    });
+}, { threshold: 0.08 });
+
+document.querySelectorAll('.section, .code-section').forEach(el => observer.observe(el));
+
+/* ── Metrics counter animation ── */
+const metricObserver = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+        if (e.isIntersecting) e.target.style.animationPlayState = 'running';
+    });
+});
+document.querySelectorAll('.metric').forEach(el => {
+    el.style.animationPlayState = 'paused';
+    metricObserver.observe(el);
+});
+
+/* ── Terminal typing engine ── */
+const snippets = [
+`// Sieve of Eratosthenes
+int is_prime = [100001];
+int i = 2;
+while (i < 100001) {
+    if (is_prime[i] == 0) {
+        int j = i * 2;
+        while (j < 100001) {
+            is_prime[j] = 1;
+            j += i;
+        }
+    }
+    i++;
+}
+print("Primes computed.");`,
+
+`// Stream cipher keystream
+int lfsr_hi = 172;
+int lfsr_lo = 225;
+int fb = 0;
+int bit = 0;
+int out = 0;
+int w = 1;
+int k = 0;
+while (k < 8) {
+    fb = lfsr_hi / 128;
+    bit = lfsr_lo;
+    bit -= bit / 2 * 2;
+    out += bit * w;
+    w *= 2;
+    k++;
+}
+print(out);`,
+
+`// Fixed-point accumulator
+int acc = [64];
+int i = 0;
+int prev = 0;
+while (i < 64) {
+    acc[i] = prev + i * 3;
+    prev = acc[i];
+    i++;
+}
+print("Buffer filled.");`
+];
+
+const el = document.getElementById('typing');
+const term = document.getElementById('terminal');
+let si = 0, ci = 0;
+
+function type() {
+    const s = snippets[si];
+    if (ci < s.length) {
+        el.innerHTML = s.substring(0, ci) + '<span class="cursor"></span>';
+        ci++;
+        term.scrollTop = term.scrollHeight;
+        setTimeout(type, ci === 1 ? 400 : 22);
+    } else {
+        setTimeout(() => {
+            si = (si + 1) % snippets.length;
+            ci = 0;
+            el.innerHTML = '';
+            type();
+        }, 2200);
+    }
+}
+
+type();
+</script>
+</body>
+</html>
