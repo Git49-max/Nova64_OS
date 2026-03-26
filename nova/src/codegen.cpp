@@ -286,6 +286,16 @@ static Value* callStructReturningFunc(Function* parentFn,
                     "function '" + funcName + "' was not declared",
                     getSourceLine(line), (int)funcName.size());
 
+    // ── VERIFICAÇÃO DE NÚMERO DE ARGUMENTOS ──
+    size_t expectedArgs = fn->arg_size();
+    // Funções que retornam struct via sret têm um parâmetro oculto inicial
+    if (userArgs.size() + 1 != expectedArgs) {
+        reportError(sourceFile, line, col,
+            "function '" + funcName + "' expects " + std::to_string(expectedArgs - 1) + 
+            " arguments, but " + std::to_string(userArgs.size()) + " were given",
+            getSourceLine(line), (int)funcName.size());
+    }
+
     StructType* st = structTypes[structTypeName];
     if (!st)
         reportError(sourceFile, line, col,
@@ -785,6 +795,73 @@ static Function* getOrBuildNovaPrintf() {
     return fn;
 }
 
+// Resolve um argumento de chamada: se for VarNode em localStructs/globalStructs,
+// retorna o ponteiro do struct. Caso contrário chama codegenExpr normalmente.
+// Também verifica mutabilidade se o parâmetro for &mut.
+static Value* resolveCallArg(const ASTNode* argNode, const std::string& funcName,
+                              int paramIdx, int line, int col) {
+    auto spIt = structParamFuncs.find(funcName);
+    bool isStructParam = false;
+    std::string paramTypeName;
+    if (spIt != structParamFuncs.end()) {
+        for (auto& entry : spIt->second) {
+            if (entry.first == paramIdx) { 
+                isStructParam = true; 
+                paramTypeName = entry.second;
+                break; 
+            }
+        }
+    }
+
+    if (isStructParam) {
+        // Se for referência (&T ou &mut T), avalia a expressão diretamente
+        if (!paramTypeName.empty() && paramTypeName[0] == '&') {
+            // ── VERIFICAÇÃO DE REFERÊNCIA MUTÁVEL ──
+            if (paramTypeName.substr(0, 5) == "&mut ") {
+                auto* unOp = dynamic_cast<const UnaryOpNode*>(argNode);
+                if (!unOp || unOp->op != "&mut") {
+                    reportError(sourceFile, line, col,
+                        "argument " + std::to_string(paramIdx+1) + " of '" + funcName + 
+                        "' expects a mutable reference (&mut), but an immutable reference (&) or value was given",
+                        getSourceLine(line), (int)funcName.size());
+                }
+            }
+
+            Value* val = codegenExpr(argNode);
+            // Se o resultado for i64 (ponteiro), converte para ptr do LLVM se necessário
+            if (val->getType()->isIntegerTy(64))
+                val = builder.CreateIntToPtr(val, PointerType::getUnqual(ctx));
+            else if (!val->getType()->isPointerTy()) {
+                reportError(sourceFile, line, col,
+                    "argument " + std::to_string(paramIdx+1) + " of '" + funcName + 
+                    "' expects a reference, but a value was given",
+                    getSourceLine(line), (int)funcName.size(),
+                    "use '&' or '&mut' to pass a reference");
+            }
+            return val;
+        } else {
+            // Parâmetro de struct por valor: o argumento deve ser um nome de variável
+            if (auto* varN = dynamic_cast<const VarNode*>(argNode)) {
+                std::string sType;
+                Value* ptr = getStructPtrValue(varN->name, sType);
+                if (!ptr)
+                    reportError(sourceFile, line, col,
+                                "struct variable '" + varN->name + "' was not declared",
+                                getSourceLine(line), (int)varN->name.size());
+                return ptr;
+            } else {
+                reportError(sourceFile, line, col,
+                            "argument " + std::to_string(paramIdx+1) + " of '" + funcName +
+                            "' must be a struct variable name",
+                            getSourceLine(line), (int)funcName.size(),
+                            "pass a named struct variable: " + funcName + "(myStruct, ...)");
+                return nullptr;
+            }
+        }
+    }
+    return codegenExpr(argNode);
+}
+
 // Resolve um nome possivelmente encadeado (ex: "L.start" ou "L.start.inner")
 // para o ponteiro do struct e seu tipo, navegando pelos campos via GEP.
 // Retorna {ponteiro, typeName} do struct final, ou {nullptr, ""} se não encontrado.
@@ -1141,53 +1218,10 @@ static Value* codegenExpr(const ASTNode* node) {
             return nullptr;
         }
 
-        // Gera os argumentos, substituindo struct args por ponteiros
+        // Gera os argumentos, usando resolveCallArg que valida &mut e struct params
         std::vector<Value*> args;
-        auto spIt = structParamFuncs.find(n->name);
-
         for (size_t i = 0; i < n->args.size(); i++) {
-            // Verifica se este param é do tipo struct ou referência
-            bool isStructParam = false;
-            std::string paramTypeName;
-            if (spIt != structParamFuncs.end()) {
-                for (auto& entry : spIt->second) {
-                    if ((size_t)entry.first == i) { 
-                        isStructParam = true; 
-                        paramTypeName = entry.second;
-                        break; 
-                    }
-                }
-            }
-
-            if (isStructParam) {
-                // Se for referência (&T ou &mut T), avalia a expressão diretamente
-                if (!paramTypeName.empty() && paramTypeName[0] == '&') {
-                    Value* val = codegenExpr(n->args[i].get());
-                    // Se o resultado for i64 (ponteiro), converte para ptr do LLVM se necessário
-                    if (val->getType()->isIntegerTy(64))
-                        val = builder.CreateIntToPtr(val, PointerType::getUnqual(ctx));
-                    args.push_back(val);
-                } else {
-                    // Parâmetro de struct por valor: o argumento deve ser um nome de variável
-                    if (auto* varN = dynamic_cast<const VarNode*>(n->args[i].get())) {
-                        std::string sType;
-                        Value* ptr = getStructPtrValue(varN->name, sType);
-                        if (!ptr)
-                            reportError(sourceFile, n->line, n->col,
-                                        "struct variable '" + varN->name + "' was not declared",
-                                        getSourceLine(n->line), (int)varN->name.size());
-                        args.push_back(ptr);
-                    } else {
-                        reportError(sourceFile, n->line, n->col,
-                                    "struct argument must be a struct variable name",
-                                    getSourceLine(n->line), (int)n->name.size(),
-                                    "pass a named struct variable: " + n->name + "(myStruct, ...)");
-                        return nullptr;
-                    }
-                }
-            } else {
-                args.push_back(codegenExpr(n->args[i].get()));
-            }
+            args.push_back(resolveCallArg(n->args[i].get(), n->name, (int)i, n->line, n->col));
         }
 
         // Tenta resolver via tabela de overloads
@@ -1200,6 +1234,21 @@ static Value* codegenExpr(const ASTNode* node) {
                         getSourceLine(n->line), (int)n->name.size());
 
         bool isVariadic = fn->getFunctionType()->isVarArg();
+        size_t expectedArgs = fn->arg_size();
+
+        // ── VERIFICAÇÃO DE NÚMERO DE ARGUMENTOS ──
+        if (!isVariadic && args.size() != expectedArgs) {
+            reportError(sourceFile, n->line, n->col,
+                "function '" + n->name + "' expects " + std::to_string(expectedArgs) + 
+                " arguments, but " + std::to_string(args.size()) + " were given",
+                getSourceLine(n->line), (int)n->name.size());
+        }
+        if (isVariadic && args.size() < expectedArgs) {
+            reportError(sourceFile, n->line, n->col,
+                "function '" + n->name + "' expects at least " + std::to_string(expectedArgs) + 
+                " arguments, but only " + std::to_string(args.size()) + " were given",
+                getSourceLine(n->line), (int)n->name.size());
+        }
 
         // Coerção dos parâmetros fixos
         size_t pi = 0;
@@ -1214,6 +1263,17 @@ static Value* codegenExpr(const ASTNode* node) {
                     args[pi] = builder.CreateFPExt(args[pi], want, "coerce");
                 else if (got->isDoubleTy() && want->isFloatTy())
                     args[pi] = builder.CreateFPTrunc(args[pi], want, "coerce");
+                else if (got->isIntegerTy() && want->isIntegerTy()) {
+                    if (got->getIntegerBitWidth() < want->getIntegerBitWidth())
+                        args[pi] = builder.CreateSExt(args[pi], want, "coerce");
+                    else
+                        args[pi] = builder.CreateTrunc(args[pi], want, "coerce");
+                } else if (!want->isPointerTy()) {
+                    reportError(sourceFile, n->line, n->col,
+                                "type mismatch for argument " + std::to_string(pi+1) +
+                                " in call to '" + n->name + "': expected type does not match value given",
+                                getSourceLine(n->line), (int)n->name.size());
+                }
             }
             pi++;
         }
@@ -1394,32 +1454,6 @@ static int getFieldIndex(const std::string& typeName, const std::string& fieldNa
     return -1;
 }
 
-// Resolve um argumento de chamada: se for VarNode em localStructs/globalStructs,
-// retorna o ponteiro do struct. Caso contrário chama codegenExpr normalmente.
-static Value* resolveCallArg(const ASTNode* argNode, const std::string& funcName,
-                              int paramIdx, int line, int col) {
-    auto spIt = structParamFuncs.find(funcName);
-    bool isStructParam = false;
-    if (spIt != structParamFuncs.end())
-        for (auto& [idx, typeName] : spIt->second)
-            if (idx == paramIdx) { isStructParam = true; break; }
-
-    if (isStructParam) {
-        if (auto* vn = dynamic_cast<const VarNode*>(argNode)) {
-            std::string sType;
-            Value* ptr = getStructPtrValue(vn->name, sType);
-            if (ptr) return ptr;
-            reportError(sourceFile, line, col,
-                "struct variable '" + vn->name + "' was not declared in this scope",
-                getSourceLine(line), (int)vn->name.size());
-        }
-        reportError(sourceFile, line, col,
-            "argument " + std::to_string(paramIdx+1) + " of '" + funcName +
-            "' must be a struct variable",
-            getSourceLine(line), (int)funcName.size());
-    }
-    return codegenExpr(argNode);
-}
 
 static void codegenStmt(const ASTNode* node, Function* fn) {
     // ── Declaração de variável de struct local: Point p;  ou  Point p = func(); ──
@@ -2832,7 +2866,9 @@ void codegenProgram(const ProgramNode& program, const std::string& outputFile,
                 std::vector<std::pair<int,std::string>> spi;
                 int userIdx = 0;
                 for (auto& p : fd->params) {
-                    if (p.type == DataType::Void && p.name.size() >= 10 &&
+                    if (p.type == DataType::Custom && !p.structTypeName.empty()) {
+                        spi.push_back({userIdx, p.structTypeName});
+                    } else if (p.type == DataType::Void && p.name.size() >= 10 &&
                         p.name.substr(0,10) == "__struct__") {
                         std::string encoded = p.name.substr(10);
                         auto sep = encoded.find("::");
