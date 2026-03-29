@@ -2824,9 +2824,7 @@ static void codegenFunction(const FunctionNode* fn) {
                     // Strings e struct params lidos: readonly + noalias
                     func->addParamAttr(ai, Attribute::ReadOnly);
                     func->addParamAttr(ai, Attribute::NoAlias);
-                    #if LLVM_VERSION_MAJOR >= 21
-                        func->addParamAttr(Attribute::getWithoutType(ctx, Attribute::NoCapture))
-                    #else
+                    #if LLVM_VERSION_MAJOR < 21
                         func->addParamAttr(ai, Attribute::NoCapture);
                     #endif
                 }

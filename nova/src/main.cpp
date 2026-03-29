@@ -5,7 +5,7 @@
 #include <cstring>
 #include <string>
 #ifdef _WIN32
-    #include <curses.h>
+    #include <ncurses/curses.h>
 #else
     #include <ncurses.h>
 #endif
