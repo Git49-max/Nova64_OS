@@ -97,7 +97,12 @@ static std::string buildLinkCmd(const std::vector<std::string>& objFiles,
     }
 
     // ── Alvo host (Linux/macOS)
-    std::string cmd = "clang -m64" + objs;
+
+    #ifdef _WIN32
+        std::string cmd = "gcc -m64" + objs;
+    #else
+        std::string cmd = "clang -m64" + objs;
+    #endif
     if (ext == ".so" || ext == ".dylib") {
         cmd += " -shared";
     } else if (ext == ".a") {
