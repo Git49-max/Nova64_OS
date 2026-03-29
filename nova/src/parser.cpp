@@ -885,6 +885,12 @@ static NodePtr parseLetDecl(int tokLine, int tokCol) {
     eat(TOKEN_SEMI);
     if (!isMut) immutableVars.insert(name);
     declaredVarNames.insert(name);
+    // Se já existia algum registro antigo de struct (por exemplo vindo de um
+    // #include) com o mesmo nome, uma declaração local primitiva deve
+    // sobrescrevê-lo para evitar que o parser trate `x = func(...)` como
+    // StructAssignNode indevidamente.
+    if (type != DataType::Custom)
+        declaredVarStructType.erase(name);
     return std::make_unique<VarDeclNode>(type, name, std::move(init), isMut, tokLine, tokCol);
 }
 
@@ -1450,8 +1456,17 @@ static NodePtr parseStatement() {
                     }
                     eat(TOKEN_RPAREN);
                     eat(TOKEN_SEMI);
-                    return std::make_unique<StructAssignNode>(
-                        firstName, rhsName, std::move(args), tokLine, tokCol);
+                    // Se o destino foi declarado como struct, então a atribuição
+                    // completa precisa ser tratada como StructAssignNode.
+                    // Caso contrário (x é primitivo), trate como VarAssignNode
+                    // atribuindo o resultado da chamada de função.
+                    if (declaredVarStructType.find(firstName) != declaredVarStructType.end()) {
+                        return std::make_unique<StructAssignNode>(
+                            firstName, rhsName, std::move(args), tokLine, tokCol);
+                    }
+                    return std::make_unique<VarAssignNode>(
+                        firstName, "=", std::make_unique<CallNode>(rhsName, std::move(args), tokLine, tokCol),
+                        tokLine, tokCol);
                 }
                 restoreLexerState(st);
                 current = saved;

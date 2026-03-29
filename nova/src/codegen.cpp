@@ -2824,7 +2824,11 @@ static void codegenFunction(const FunctionNode* fn) {
                     // Strings e struct params lidos: readonly + noalias
                     func->addParamAttr(ai, Attribute::ReadOnly);
                     func->addParamAttr(ai, Attribute::NoAlias);
-                    func->addParamAttr(ai, Attribute::NoCapture);
+                    #if LLVM_VERSION_MAJOR >= 21
+                        func->addParamAttr(Attribute::getWithoutType(ctx, Attribute::NoCapture))
+                    #else
+                        func->addParamAttr(ai, Attribute::NoCapture);
+                    #endif
                 }
             }
             ai++;
@@ -3519,7 +3523,11 @@ void codegenProgram(const ProgramNode& program, const std::string& outputFile,
             targetTriple = "x86_64-" + targetTriple.substr(targetTriple.find('-') + 1);
         }
     }
+    #if LLVM_VERSION_MAJOR >= 21
+    llvmModule->setTargetTriple(llvm::Triple(targetTriple));
+#else
     llvmModule->setTargetTriple(targetTriple);
+#endif
 
     std::string error;
     auto target = TargetRegistry::lookupTarget(targetTriple, error);

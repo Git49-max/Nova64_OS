@@ -58,11 +58,11 @@ echo ""
 echo -e "${BOLD}Nova Language Installer${RESET}"
 echo -e "${GRAY}  repository: $REPO${RESET}"
 echo -e "${GRAY}  binary:     $BIN_DIR/n++${RESET}"
+echo -e "${GRAY}  orbit:      $BIN_DIR/orbit${RESET}"
 echo -e "${GRAY}  stdlib:     $LIB_DIR/${RESET}"
 echo ""
 
 # ── Check package structure ───────────────────────────────────────────────────
-# Se o binário não existir, tenta dar um 'make' antes de falhar
 if [[ ! -f "$REPO/n++" ]]; then
     warn "Binary 'n++' not found. Trying to build it..."
     if [[ -f "$REPO/Makefile" ]]; then
@@ -73,25 +73,42 @@ if [[ ! -f "$REPO/n++" ]]; then
 fi
 [[ -d "$REPO/stdlib" ]] || fail "'stdlib/' directory not found in package"
 
-# ── Install the binary ────────────────────────────────────────────────────────
-info "Installing binary..."
-
+# ── Install n++ binary ────────────────────────────────────────────────────────
+info "Installing n++ binary..."
 sudo mkdir -p "$BIN_DIR"
 sudo cp "$REPO/n++" "$BIN_DIR/n++"
 sudo chmod +x "$BIN_DIR/n++"
-
 success "Binary installed at $BIN_DIR/n++"
 
 # ── Install the stdlib ────────────────────────────────────────────────────────
 info "Installing standard library..."
-
 sudo mkdir -p "$LIB_DIR"
 sudo cp "$REPO/stdlib/"*.nh  "$LIB_DIR/" 2>/dev/null || warn "No .nh files found"
 sudo cp "$REPO/stdlib/"*.npp "$LIB_DIR/" 2>/dev/null || warn "No .npp files found"
-
 NH_COUNT=$(ls "$LIB_DIR"/*.nh  2>/dev/null | wc -l)
 NPP_COUNT=$(ls "$LIB_DIR"/*.npp 2>/dev/null | wc -l)
 success "Standard library installed ($NH_COUNT headers, $NPP_COUNT modules)"
+
+# ── Install orbit ─────────────────────────────────────────────────────────────
+info "Installing orbit..."
+if [[ -d "$REPO/orbit" ]]; then
+    # Build orbit if needed
+    if [[ ! -f "$REPO/orbit/orbit" ]]; then
+        info "Building orbit..."
+        make -C "$REPO/orbit" --no-print-directory 2>&1 | grep -i "error:" || true
+        MAKE_RET=${PIPESTATUS[0]}
+        if [[ $MAKE_RET -ne 0 ]]; then
+            warn "orbit build failed. Skipping orbit installation."
+        fi
+    fi
+    if [[ -f "$REPO/orbit/orbit" ]]; then
+        sudo cp "$REPO/orbit/orbit" "$BIN_DIR/orbit"
+        sudo chmod +x "$BIN_DIR/orbit"
+        success "orbit installed at $BIN_DIR/orbit"
+    fi
+else
+    warn "orbit/ directory not found. Skipping orbit installation."
+fi
 
 # ── Configure shell RC ────────────────────────────────────────────────────────
 info "Configuring environment variables..."
@@ -120,8 +137,7 @@ add_to_rc() {
 
 if [[ -n "$SHELL_RC" ]]; then
     add_to_rc "export NOVA_STDLIB_PATH=\"$LIB_DIR\""  "Nova standard library path"
-    # Apenas adiciona ao PATH se já não estiver lá
-    add_to_rc "export PATH=\"\$PATH:$BIN_DIR\""       "Nova compiler"
+    add_to_rc "export PATH=\"\$PATH:$BIN_DIR\""       "Nova compiler + orbit"
     success "Environment variables added to $SHELL_RC"
 else
     warn "Could not detect shell RC file. Add these manually:"
@@ -133,6 +149,7 @@ fi
 echo ""
 echo -e "${BOLD}${GREEN}Installation complete!${RESET}"
 echo ""
-echo -e "  Try running: ${CYAN}n++ --version${RESET}"
-echo -e "  To start:    ${CYAN}source ~/.bashrc${RESET} (or restart terminal)"
+echo -e "  Nova compiler:  ${CYAN}n++ --version${RESET}"
+echo -e "  Orbit:          ${CYAN}orbit help${RESET}"
+echo -e "  Reload shell:   ${CYAN}source ~/.bashrc${RESET}  (or restart terminal)"
 echo ""

@@ -1,15 +1,23 @@
 #include <stdio.nh>
-#include <math.nh>
 
-fn yey(x: i32){
-    std::printf("%d\n", x);
+// Mudamos para f64 para suportar números astronômicos
+fn factorial(n: f64) -> f64 {
+    if (n <= 1.0) {
+        return 1.0;
+    }
+    return n * factorial(n - 1.0);
 }
-fn main(){
-    let mut x: i32 = 0;
-    std::printf("Olá! Digite um número: ");
-    std::scanf("%d", &x);
-    std::printf("Você digitou: %d\n", x);
-    yey(x);
-    let resultado: f64 = std::sqrt(x);
-    std::printf("A raíz quadrada de %d é: %f\n", x, resultado);
+
+fn main() {
+    let mut f: f64 = 0.0;
+    
+    std::printf("Escolha um número para ver seu fatorial: ");
+    // %lf para ler double no scanf
+    std::scanf("%lf", &f);
+    
+    let res: f64 = factorial(f);
+    
+    // %e ativa a notação científica (ex: 9.33e+157)
+    // %.2e limita a duas casas decimais para ficar limpo
+    std::printf("Resultado: %e \n", res);
 }

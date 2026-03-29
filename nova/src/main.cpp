@@ -4,7 +4,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
-#include <ncurses.h>
+#ifdef _WIN32
+    #include <curses.h>
+#else
+    #include <ncurses.h>
+#endif
 #include <vector>
 #include <set>
 #include <algorithm>
@@ -746,7 +750,8 @@ int main(int argc, char* argv[]) {
     if (argc < 2) { std::cout << "\033[1;31mFatal Error:\033[0m No file specified\n"; return 1; }
 
     if (std::string(argv[1]) == "--version") {
-        std::cout << ANSI_BOLD << "Nova Compiler" << ANSI_RESET << " - Beta 2.0.1 \n";
+        std::cout << ANSI_BOLD << "Nova Compiler" << ANSI_RESET 
+          << " - Beta 2.0.1 (Build " << NOVA_BUILD_VERSION << ")\n";
         return 0;
     }
     if (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h") {
