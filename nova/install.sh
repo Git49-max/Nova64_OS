@@ -141,32 +141,28 @@ NPP_COUNT=$(ls "$LIB_DIR"/*.npp 2>/dev/null | wc -l)
 success "Standard library installed ($NH_COUNT headers, $NPP_COUNT modules)"
 
 # ── Install orbit ─────────────────────────────────────────────────────────────
-info "Installing orbit..."
-ORBIT_BIN=$($IS_WINDOWS && echo "orbit/orbit.exe" || echo "orbit/orbit")
-if [[ -d "$REPO/orbit" ]]; then
-    if [[ ! -f "$REPO/$ORBIT_BIN" ]]; then
-        info "Building orbit..."
-        make -C "$REPO/orbit" --no-print-directory 2>&1 | grep -i "error:" || true
-        MAKE_RET=${PIPESTATUS[0]}
-        if [[ $MAKE_RET -ne 0 ]]; then
-            warn "orbit build failed. Skipping orbit installation."
-        fi
-    fi
-    ORBIT_DEST=$($IS_WINDOWS && echo "orbit.exe" || echo "orbit")
-    if [[ -f "$REPO/$ORBIT_BIN" ]]; then
-        if $IS_WINDOWS; then
-            cp "$REPO/$ORBIT_BIN" "$BIN_DIR/$ORBIT_DEST"
-            chmod +x "$BIN_DIR/$ORBIT_DEST"
-        else
-            sudo cp "$REPO/$ORBIT_BIN" "$BIN_DIR/$ORBIT_DEST"
-            sudo chmod +x "$BIN_DIR/$ORBIT_DEST"
-        fi
-        success "orbit installed at $BIN_DIR/$ORBIT_DEST"
-    fi
+if $IS_WINDOWS; then
+    warn "orbit installation is not supported on Windows yet. Skipping."
 else
-    warn "orbit/ directory not found. Skipping orbit installation."
+    info "Installing orbit..."
+    if [[ -d "$REPO/orbit" ]]; then
+        if [[ ! -f "$REPO/orbit/orbit" ]]; then
+            info "Building orbit..."
+            make -C "$REPO/orbit" --no-print-directory 2>&1 | grep -i "error:" || true
+            MAKE_RET=${PIPESTATUS[0]}
+            if [[ $MAKE_RET -ne 0 ]]; then
+                warn "orbit build failed. Skipping orbit installation."
+            fi
+        fi
+        if [[ -f "$REPO/orbit/orbit" ]]; then
+            sudo cp "$REPO/orbit/orbit" "$BIN_DIR/orbit"
+            sudo chmod +x "$BIN_DIR/orbit"
+            success "orbit installed at $BIN_DIR/orbit"
+        fi
+    else
+        warn "orbit/ directory not found. Skipping orbit installation."
+    fi
 fi
-
 # ── Configure shell RC ────────────────────────────────────────────────────────
 info "Configuring environment variables..."
 
@@ -195,6 +191,9 @@ add_to_rc() {
 if [[ -n "$SHELL_RC" ]]; then
     add_to_rc "export NOVA_STDLIB_PATH=\"$LIB_DIR\""  "Nova standard library path"
     add_to_rc "export PATH=\"\$PATH:$BIN_DIR\""       "Nova compiler + orbit"
+    if $IS_WINDOWS; then
+        add_to_rc "alias n++='n++.exe'"  "Nova compiler alias (Windows)"
+    fi
     success "Environment variables added to $SHELL_RC"
 else
     warn "Could not detect shell RC file. Add these manually:"
