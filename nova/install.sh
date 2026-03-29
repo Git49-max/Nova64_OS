@@ -4,7 +4,7 @@
 # Suporta Linux (LLVM 19) e Windows/MSYS2 (LLVM 21)
 # ─────────────────────────────────────────────────────────────────────────────
 
-set -uo pipefail
+set -o pipefail
 
 BOLD="\033[1m"
 CYAN="\033[1;36m"
