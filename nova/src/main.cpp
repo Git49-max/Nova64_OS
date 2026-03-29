@@ -205,7 +205,11 @@ static int compileFile(const std::vector<std::string>& sourceFiles,
         if (slash != std::string::npos) base = base.substr(slash + 1);
         auto dot = base.rfind('.');
         if (dot != std::string::npos) base = base.substr(0, dot);
-        std::string objPath = "/tmp/nova_" + base + "_" + std::to_string(objFiles.size()) + ".o";
+        #ifdef _WIN32
+            std::string objPath = std::string(getenv("TEMP") ? getenv("TEMP") : "C:/tmp") + "/nova_" + base + "_" + std::to_string(objFiles.size()) + ".o";
+        #else
+            std::string objPath = "/tmp/nova_" + base + "_" + std::to_string(objFiles.size()) + ".o";
+        #endif
 
         std::string obj = compileSingleFile(src, optLevel, winTarget, objPath);
         if (obj.empty()) return 1;
