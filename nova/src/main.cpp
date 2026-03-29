@@ -239,8 +239,18 @@ static int compileFile(const std::vector<std::string>& sourceFiles,
     std::string linkCmd = buildLinkCmd(objFiles, outputFile);
 
     // Redireciona stderr do linker para arquivo temporário
-    std::string linkerErrFile = "/tmp/nova_linker_" + std::to_string(getpid()) + ".txt";
-    int ret = system((linkCmd + " 2>" + linkerErrFile).c_str());
+    // Linha 242-243, troca por:
+    #ifdef _WIN32
+        std::string linkerErrFile = std::string(getenv("TEMP") ? getenv("TEMP") : "C:/tmp") + "/nova_linker_" + std::to_string(getpid()) + ".txt";
+        std::string fullCmd = "C:/msys64/mingw64/bin/gcc.exe -m64";
+        for (auto& o : objFiles) fullCmd += " " + o;
+        // rebuild linkCmd com caminho absoluto
+        std::string linkCmd2 = fullCmd + " -o " + outputFile;
+        int ret = system((linkCmd2 + " 2>" + linkerErrFile).c_str());
+    #else
+        std::string linkerErrFile = "/tmp/nova_linker_" + std::to_string(getpid()) + ".txt";
+        int ret = system((linkCmd + " 2>" + linkerErrFile).c_str());
+    #endif
 
     // Remove os .o temporários
     for (auto& o : objFiles) std::remove(o.c_str());
