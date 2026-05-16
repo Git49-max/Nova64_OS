@@ -32,7 +32,7 @@ static void printError(const std::string& msg) {
 
 // ── --help ────────────────────────────────────────────────────────────────────
 static void printHelp() {
-    std::cout << ANSI_BOLD << "Nova Compiler - Beta 2.0.1 \n" << ANSI_RESET;
+    std::cout << ANSI_BOLD << "Nova Compiler - Beta 2.2.0 \n" << ANSI_RESET;
     std::cout << "\n";
     std::cout << ANSI_BOLD << "Usage:\n" << ANSI_RESET;
     std::cout << "  n++ <file.npp> [file2.npp ...] [options]\n";
@@ -321,7 +321,7 @@ int main(int argc, char* argv[]) {
 
     if (std::string(argv[1]) == "--version") {
         std::cout << ANSI_BOLD << "Nova Compiler" << ANSI_RESET 
-          << " - Beta 2.0.1 (Build " << NOVA_BUILD_VERSION << ")\n";
+          << " - Beta 2.2.0 (Build " << NOVA_BUILD_VERSION << ")\n";
         return 0;
     }
     if (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h") {
