@@ -9,7 +9,7 @@ CXXFLAGS += -DNOVA_BUILD_VERSION=$(BUILD_VERSION)
 LDFLAGS_DYNAMIC = $(shell llvm-config --ldflags --system-libs --libs all)
 LIBS = -lncurses
 
-SRCS = src/main.cpp src/lexer.cpp src/parser.cpp src/codegen.cpp src/analysis.cpp
+SRCS = src/main.cpp src/lexer.cpp src/parser.cpp src/codegen.cpp src/analysis.cpp src/editor.cpp
 TARGET = n++
 
 # ── Compilador Nova (n++) ─────────────────────────────────────────────────────

@@ -59,59 +59,25 @@ fn sqrt(n: f64) -> f64 {
 
     return guess;
 }
-// [f64, f64, f64] 
-fn lerp(a: f64, b: f64, t: f64) -> f64 { return a + t * (b - a); }
 
-// [i32, i32, f64]
-fn lerp(a: i32, b: i32, t: f64) -> f64 { return (a as f64) + t * ((b - a) as f64); }
-
-// [f64, i32, f64] 
-fn lerp(a: f64, b: i32, t: f64) -> f64 { return a + t * ((b as f64) - a); }
-
-// [i32, f64, f64]
-fn lerp(a: i32, b: f64, t: f64) -> f64 { return (a as f64) + t * (b - (a as f64)); }
-// Todas f64
-fn clamp(v: f64, min: f64, max: f64) -> f64 {
-    if (v < min) { return min; }
-    if (v > max) { return max; }
-    return v;
+fn pot(n: i32, e: i32) -> i32 {
+    let mut result: i32 = 1;
+    for(let mut i: i32 = 0; i < e; i++) {
+        result = result * n;
+    }
+    return result;
 }
-
-// Valor f64 com limites i32
-fn clamp(v: f64, min: i32, max: i32) -> f64 {
-    let f_min = min as f64;
-    let f_max = max as f64;
-    if (v < f_min) { return f_min; }
-    if (v > f_max) { return f_max; }
-    return v;
+fn pot(n: i64, e: i64) -> i64 {
+    let mut result: i64 = 1;
+    for(let mut i: i64 = 0; i < e; i++) {
+        result = result * n;
+    }
+    return result;
 }
-
-// Tudo i32 (Retorno i32)
-fn clamp(v: i32, min: i32, max: i32) -> i32 {
-    if (v < min) { return min; }
-    if (v > max) { return max; }
-    return v;
-}
-// f64 e i32 (O clássico)
-fn pow(base: f64, exp: i32) -> f64 {
-    let mut res: f64 = 1.0;
-    let mut i: i32 = 0;
-    let mut e: i32 = abs(exp);
-    while (i < e) { res = res * base; i = i + 1; }
-    if (exp < 0) { return 1.0 / res; }
-    return res;
-}
-
-// i32 e i32 (Retorno i32 - Útil para kernels e lógica de inteiros)
-fn pow(base: i32, exp: i32) -> i32 {
-    let mut res: i32 = 1;
-    let mut i: i32 = 0;
-    let e = abs(exp);
-    while (i < e) { res = res * base; i = i + 1; }
-    return res;
-}
-
-
-fn pow_f(base: i32, exp: i32) -> f64 {
-    return pow(base as f64, exp);
+fn pot(n: f64, e: f64) -> f64 {
+    let mut result: f64 = 1.00;
+    for(let mut i: f64 = 0.00; i < e; i++) {
+        result = result * n;
+    }
+    return result;
 }

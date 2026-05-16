@@ -12,6 +12,13 @@
 #define DIM     "\033[2m"
 #define RESET   "\033[0m"
 
+// Modo echeck: coleta erros em vez de encerrar
+inline bool g_echeckMode = false;
+struct EcheckError {
+  int line, col;
+  std::string message;
+};
+inline std::vector<EcheckError> g_echeckErrors;
 // ── Exibe erro estilo GCC/Clang e encerra o programa ─────────────────────────
 // tokenLen: tamanho do token para os ^^^^
 // hint: mensagem opcional em azul/cyan abaixo do ^^^^  (ex: "did you mean 'foo'?")
@@ -46,6 +53,10 @@ inline void reportError(const std::string& filename, int line, int col,
     }
 
     std::cerr << "\n";
+    if (g_echeckMode) {
+      g_echeckErrors.push_back({line, col, message});
+      return;
+    }
     exit(1);
 }
 

@@ -566,7 +566,7 @@ footer {
         <h1>Native speed.<br><span class="dim-word">Modern syntax.</span></h1>
         <p class="hero-sub">Nova compiles directly to native code via LLVM. No VM, no bytecode, no overhead — just fast executables from clean, readable code.</p>
         <div class="hero-cta">
-            <a href="download.html" class="btn-primary">↓ Download Beta 1.3</a>
+            <a href="download.html" class="btn-primary">↓ Download 2.1.0</a>
             <a href="docs.html" class="btn-ghost">Read the Docs →</a>
         </div>
     </div>
@@ -624,27 +624,27 @@ footer {
         </div>
         <div class="code-block-body">
 <pre><span class="kw">#include</span> <span class="str">&lt;stdio.nh&gt;</span>
-<span class="typ">int</span> limit <span class="op">=</span> <span class="num">1000000</span><span class="op">;</span>
-<span class="typ">int</span> isPrime[<span class="num">1000001</span>]<span class="op">;</span>
 
-<span class="typ">int</span> <span class="fn">main</span>()<span class="op"> {</span>
-    <span class="kw">for</span>(<span class="typ">int</span> i <span class="op">=</span> <span class="num">2</span><span class="op">;</span> i <span class="op">&lt;=</span> limit<span class="op">;</span> i<span class="op">++</span>) <span class="op">{</span>
-        <span class="kw">if</span>(isPrime[i] <span class="op">==</span> <span class="num">0</span>) <span class="kw">then</span> <span class="op">{</span>
-            <span class="typ">int</span> j <span class="op">=</span> i <span class="op">*</span> <span class="num">2</span><span class="op">;</span>
+<span class="kw">let</span> limit<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> <span class="num">1000000</span><span class="op">;</span>
+<span class="kw">let</span> <span class="kw">mut</span> isPrime<span class="op">:</span> <span class="typ">i32</span>[<span class="num">1000001</span>] <span class="op">=</span> {}<span class="op">;</span>
+
+<span class="kw">fn</span> <span class="fn">main</span>() <span class="op">{</span>
+    <span class="kw">for</span>(<span class="kw">let</span> <span class="kw">mut</span> i<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> <span class="num">2</span><span class="op">;</span> i <span class="op">&lt;=</span> limit<span class="op">;</span> i<span class="op">++</span>) <span class="op">{</span>
+        <span class="kw">if</span>(isPrime[i] <span class="op">==</span> <span class="num">0</span>) <span class="op">{</span>
+            <span class="kw">let</span> <span class="kw">mut</span> j<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> i <span class="op">*</span> <span class="num">2</span><span class="op">;</span>
             <span class="kw">while</span>(j <span class="op">&lt;=</span> limit) <span class="op">{</span>
                 isPrime[j] <span class="op">=</span> <span class="num">1</span><span class="op">;</span>
                 j <span class="op">+=</span> i<span class="op">;</span>
             <span class="op">}</span>
         <span class="op">}</span>
     <span class="op">}</span>
-    <span class="typ">int</span> n <span class="op">=</span> <span class="num">2</span><span class="op">;</span>
+    <span class="kw">let</span> <span class="kw">mut</span> n<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> <span class="num">2</span><span class="op">;</span>
     <span class="kw">while</span>(n <span class="op">&lt;=</span> limit) <span class="op">{</span>
-        <span class="kw">if</span>(isPrime[n] <span class="op">==</span> <span class="num">0</span>) <span class="kw">then</span> <span class="op">{</span>
+        <span class="kw">if</span>(isPrime[n] <span class="op">==</span> <span class="num">0</span>) <span class="op">{</span>
             <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"%d\n"</span>, n)<span class="op">;</span>
         <span class="op">}</span>
-        <span class="kw">n++<span class="op">;</span></span>
+        n<span class="op">++;</span>
     <span class="op">}</span>
-    <span class="kw">return</span> <span class="num">0</span><span class="op">;</span>
 <span class="op">}</span></pre>
         </div>
     </div>
@@ -666,7 +666,7 @@ footer {
         <div class="feature-card">
             <span class="feature-icon">◈</span>
             <h3>Static Typing</h3>
-            <p>Types are checked at compile time. <code style="font-family:var(--mono);font-size:12px;color:var(--accent2)">int</code>, <code style="font-family:var(--mono);font-size:12px;color:var(--accent2)">float</code>, <code style="font-family:var(--mono);font-size:12px;color:var(--accent2)">double</code>, <code style="font-family:var(--mono);font-size:12px;color:var(--accent2)">long</code>, <code style="font-family:var(--mono);font-size:12px;color:var(--accent2)">char</code>, <code style="font-family:var(--mono);font-size:12px;color:var(--accent2)">string</code> — no runtime surprises.</p>
+            <p>Types are checked at compile time. <code style="font-family:var(--mono);font-size:12px;color:var(--accent2)">i32</code>, <code style="font-family:var(--mono);font-size:12px;color:var(--accent2)">f32</code>, <code style="font-family:var(--mono);font-size:12px;color:var(--accent2)">f64</code>, <code style="font-family:var(--mono);font-size:12px;color:var(--accent2)">i64</code>, <code style="font-family:var(--mono);font-size:12px;color:var(--accent2)">char</code>, <code style="font-family:var(--mono);font-size:12px;color:var(--accent2)">string</code> — no runtime surprises.</p>
         </div>
         <div class="feature-card">
             <span class="feature-icon">⊞</span>
@@ -676,7 +676,7 @@ footer {
         <div class="feature-card">
             <span class="feature-icon">⇄</span>
             <h3>Full Control Flow</h3>
-            <p>if / else if / else, while loops, and C-style for loops. Short-circuit logical operators <code style="font-family:var(--mono);font-size:12px;color:var(--accent2)">&&</code> and <code style="font-family:var(--mono);font-size:12px;color:var(--accent2)">||</code> included.</p>
+            <p>if / else if / else, while loops, and rust-style for loops. Short-circuit logical operators <code style="font-family:var(--mono);font-size:12px;color:var(--accent2)">&&</code> and <code style="font-family:var(--mono);font-size:12px;color:var(--accent2)">||</code> included.</p>
         </div>
         <div class="feature-card">
             <span class="feature-icon">ƒ</span>
@@ -696,7 +696,7 @@ footer {
         <div class="feature-card">
             <span class="feature-icon">⊘</span>
             <h3>Type Safety</h3>
-            <p>Mixing <code style="font-family:var(--mono);font-size:12px;color:var(--accent2)">int</code> and <code style="font-family:var(--mono);font-size:12px;color:var(--accent2)">float</code> in arithmetic is a compile error. Compile-time array bounds checking on literal indices.</p>
+            <p>Mixing <code style="font-family:var(--mono);font-size:12px;color:var(--accent2)">i32</code> and <code style="font-family:var(--mono);font-size:12px;color:var(--accent2)">f32</code> in arithmetic is a compile error. Compile-time array bounds checking on literal indices.</p>
         </div>
     </div>
 </section>

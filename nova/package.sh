@@ -3,7 +3,7 @@
 # Nova Language Packager — Linux (.tar.gz) e Windows/MSYS2 (.zip)
 # ─────────────────────────────────────────────────────────────────────────────
 
-NAME="nova-lang-v2.1.0beta"
+NAME="nova-lang-v2.2.0beta"
 DIST_DIR="dist/$NAME"
 
 # ── Detecta OS ────────────────────────────────────────────────────────────────

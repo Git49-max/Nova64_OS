@@ -404,7 +404,7 @@ footer {
     <div class="sidebar-section">
         <div class="sidebar-section-label">Stdlib</div>
         <a href="#stdlib" class="sidebar-link">Standard Library</a>
-        <a href="#stdio" class="sidebar-link">stdio — printf &amp; print</a>
+        <a href="#stdio" class="sidebar-link">stdio — printf, print &amp; scanf</a>
         <a href="#math" class="sidebar-link">math — sqrt</a>
         <a href="#namespaces" class="sidebar-link">Namespaces</a>
         <a href="#overloading" class="sidebar-link">Overloading</a>
@@ -431,11 +431,8 @@ footer {
     <div class="docs-section" id="getting-started">
         <div class="section-eyebrow">Introduction</div>
         <h2>Getting Started with Nova</h2>
-        <p>Nova is a compiled, statically typed language that uses LLVM as its backend, linking with clang to produce native executables. The syntax is familiar — if you've written C, C++, or Java, you'll feel at home immediately.</p>
-        <p>Download the compiler from source using the downloads page.</p>
-        <p>If you have an GUI, right click on the tar.gz file -> Extract Here. If you have not, run <div class="code-block"><div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="code-filename">terminal</div></div><div class="code-block-body">tar -xzvf nova-lang-v1.2.0beta.tar.gz</div></div></p>
-        <p>Open the terminal on the extracted folder and run <div class="code-block"><div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="code-filename">terminal</div></div><div class="code-block-body">chmod +x install.sh</div></div> <div class="code-block"><div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="code-filename">terminal</div></div><div class="code-block-body">sudo ./install.sh</div></div></p>
-        <p>After it sucessfully installs the language, restart the terminal, and start coding!</p>
+        <p>Nova is a compiled, statically typed language that uses LLVM as its backend, linking with clang to produce native executables. The syntax is familiar — if you've written in Rust, you'll feel at home immediately.</p>
+        <p>Download the compiler from source using the <a href="download.html" style="color:var(--accent2);text-decoration:none;border-bottom:1px solid var(--border2);">downloads page</a>. See the <a href="installation.html" style="color:var(--accent2);text-decoration:none;border-bottom:1px solid var(--border2);">installation guide</a>.</p>
 
         <h3>Hello, World</h3>
         <p>Create a file named <code>hello.npp</code>:</p>
@@ -443,15 +440,15 @@ footer {
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="code-filename">hello.npp</div></div>
             <div class="code-block-body"><pre><span class="kw">#include</span> <span class="str">&lt;stdio.nh&gt;</span>
 
-<span class="typ">void</span> <span class="fn">main</span>() {
+<span class="kw">fn</span> <span class="fn">main</span>() {
     <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"Hello, World!\n"</span>)<span class="op">;</span>
 }</pre></div>
         </div>
         <p>Compile and run:</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="code-filename">terminal</div></div>
-            <div class="code-block-body"><pre>$ ./n++ hello.npp
-$ ./hello
+            <div class="code-block-body"><pre>$ n++ hello.npp
+$ hello
 Hello, World!</pre></div>
         </div>
 
@@ -467,13 +464,13 @@ Hello, World!</pre></div>
         <table class="docs-table">
             <thead><tr><th>Type</th><th>Description</th><th>Example</th></tr></thead>
             <tbody>
-                <tr><td>int</td><td>32-bit signed integer</td><td>42, -7, 0</td></tr>
-                <tr><td>long</td><td>64-bit signed integer — auto-promoted when literal &gt; 2147483647</td><td>9876543210</td></tr>
-                <tr><td>float</td><td>32-bit floating point</td><td>3.14, -0.5</td></tr>
-                <tr><td>double</td><td>64-bit floating point</td><td>3.14159265358979</td></tr>
+                <tr><td>i32</td><td>32-bit signed integer</td><td>42, -7, 0</td></tr>
+                <tr><td>i64</td><td>64-bit signed integer</td><td>9876543210</td></tr>
+                <tr><td>f32</td><td>32-bit floating point</td><td>3.14, -0.5</td></tr>
+                <tr><td>f64</td><td>64-bit floating point</td><td>3.14159265358979</td></tr>
                 <tr><td>char</td><td>8-bit character — literals use single quotes</td><td>'A', '\n', '\t'</td></tr>
                 <tr><td>string</td><td>UTF-8 string literal — escape sequences processed</td><td>"hello\n"</td></tr>
-                <tr><td>void</td><td>No value — functions only</td><td>—</td></tr>
+                <tr><td>bool</td><td>Boolean value</td><td>true, false</td></tr>
             </tbody>
         </table>
     </div>
@@ -481,17 +478,17 @@ Hello, World!</pre></div>
     <div class="docs-section" id="variables">
         <div class="section-eyebrow">Variables</div>
         <h2>Variables</h2>
-        <p>Variables require an explicit type at declaration. They can be optionally initialized; uninitialized variables default to <code>0</code> or null.</p>
+        <p>Variables require an explicit type at declaration. They need to be initialized. Declare them with <code>let [mut] NAME: TYPE = VALUE</code>.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
-            <div class="code-block-body"><pre><span class="typ">int</span> x<span class="op">;</span>
-<span class="typ">int</span> y <span class="op">=</span> <span class="num">10</span><span class="op">;</span>
-<span class="typ">float</span> pi <span class="op">=</span> <span class="num">3.14</span><span class="op">;</span>
-<span class="typ">string</span> name <span class="op">=</span> <span class="str">"Nova"</span><span class="op">;</span></pre></div>
+            <div class="code-block-body"><pre><span class="kw">let</span> x<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> <span class="num">0</span><span class="op">;</span>
+<span class="kw">let</span> <span class="kw">mut</span> y<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> <span class="num">10</span><span class="op">;</span>
+<span class="kw">let</span> pi<span class="op">:</span> <span class="typ">f32</span> <span class="op">=</span> <span class="num">3.14</span><span class="op">;</span>
+<span class="kw">let</span> <span class="kw">mut</span> name<span class="op">:</span> <span class="typ">string</span> <span class="op">=</span> <span class="str">"Nova"</span><span class="op">;</span></pre></div>
         </div>
 
         <h3>Assignment</h3>
-        <p>Basic and compound assignment operators are all supported:</p>
+        <p>Basic and compound assignment operators are all supported (only if the variable is declared as <code>mut</code>):</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
             <div class="code-block-body"><pre>x <span class="op">=</span> <span class="num">42</span><span class="op">;</span>
@@ -531,12 +528,12 @@ x<span class="op">--;</span>      <span class="cmt">// x = x - 1</span></pre></d
     <div class="docs-section" id="control-flow">
         <div class="section-eyebrow">Control Flow</div>
         <h2>Control Flow</h2>
-        <p>Nova requires the <code>then</code> keyword before the body of an <code>if</code> statement.</p>
+        <p>If statements have optional parentheses around the condition.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
-            <div class="code-block-body"><pre><span class="kw">if</span>(x <span class="op">&gt;</span> <span class="num">0</span>) <span class="kw">then</span> {
+            <div class="code-block-body"><pre><span class="kw">if</span>(x <span class="op">&gt;</span> <span class="num">0</span>) {
     <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"positive\n"</span>)<span class="op">;</span>
-} <span class="kw">else if</span>(x <span class="op">==</span> <span class="num">0</span>) <span class="kw">then</span> {
+} <span class="kw">else if</span> x <span class="op">==</span> <span class="num">0</span> {
     <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"zero\n"</span>)<span class="op">;</span>
 } <span class="kw">else</span> {
     <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"negative\n"</span>)<span class="op">;</span>
@@ -552,7 +549,7 @@ x<span class="op">--;</span>      <span class="cmt">// x = x - 1</span></pre></d
         <h3>while</h3>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
-            <div class="code-block-body"><pre><span class="typ">int</span> i <span class="op">=</span> <span class="num">0</span><span class="op">;</span>
+            <div class="code-block-body"><pre><span class="kw">let</span> <span class="kw">mut</span> i<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> <span class="num">0</span><span class="op">;</span>
 <span class="kw">while</span>(i <span class="op">&lt;</span> <span class="num">10</span>) {
     <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"%d\n"</span>, i)<span class="op">;</span>
     i<span class="op">++;</span>
@@ -563,12 +560,12 @@ x<span class="op">--;</span>      <span class="cmt">// x = x - 1</span></pre></d
         <p>Classic three-part syntax: initializer, condition, step. The loop variable can be declared inside the <code>for</code> or already exist.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
-            <div class="code-block-body"><pre><span class="kw">for</span>(<span class="typ">int</span> i <span class="op">=</span> <span class="num">0</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="num">10</span><span class="op">;</span> i<span class="op">++</span>) {
+            <div class="code-block-body"><pre><span class="kw">for</span>(<span class="kw">let</span> <span class="kw">mut</span> i<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> <span class="num">0</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="num">10</span><span class="op">;</span> i<span class="op">++</span>) {
     <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"%d\n"</span>, i)<span class="op">;</span>
 }
 
 <span class="cmt">// step can be any assignment</span>
-<span class="kw">for</span>(<span class="typ">int</span> i <span class="op">=</span> <span class="num">0</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="num">100</span><span class="op">;</span> i <span class="op">+=</span> <span class="num">5</span>) {
+<span class="kw">for</span>(<span class="kw">let</span> <span class="kw">mut</span> i<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> <span class="num">0</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="num">100</span><span class="op">;</span> i <span class="op">+=</span> <span class="num">5</span>) {
     <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"%d\n"</span>, i)<span class="op">;</span>
 }</pre></div>
         </div>
@@ -577,32 +574,32 @@ x<span class="op">--;</span>      <span class="cmt">// x = x - 1</span></pre></d
     <div class="docs-section" id="functions">
         <div class="section-eyebrow">Functions</div>
         <h2>Functions</h2>
-        <p>Functions are declared with a return type, name, and typed parameter list. They support full recursion.</p>
+        <p>Functions are declared with <code>fn NAME(ARG1: TYPE, ARG2: TYPE) -&gt; RETURN_TYPE { BODY }</code>. They support full recursion.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
             <div class="code-block-body"><pre><span class="kw">#include</span> <span class="str">&lt;stdio.nh&gt;</span>
 
-<span class="typ">int</span> <span class="fn">add</span>(<span class="typ">int</span> a, <span class="typ">int</span> b) {
+<span class="kw">fn</span> <span class="fn">add</span>(a<span class="op">:</span> <span class="typ">i32</span>, b<span class="op">:</span> <span class="typ">i32</span>) <span class="op">-&gt;</span> <span class="typ">i32</span> {
     <span class="kw">return</span> a <span class="op">+</span> b<span class="op">;</span>
 }
 
-<span class="typ">int</span> <span class="fn">factorial</span>(<span class="typ">int</span> n) {
-    <span class="kw">if</span>(n <span class="op">&lt;=</span> <span class="num">1</span>) <span class="kw">then</span> { <span class="kw">return</span> <span class="num">1</span><span class="op">;</span> }
+<span class="kw">fn</span> <span class="fn">factorial</span>(n<span class="op">:</span> <span class="typ">i32</span>) <span class="op">-&gt;</span> <span class="typ">i32</span> {
+    <span class="kw">if</span>(n <span class="op">&lt;=</span> <span class="num">1</span>) { <span class="kw">return</span> <span class="num">1</span><span class="op">;</span> }
     <span class="kw">return</span> n <span class="op">*</span> <span class="fn">factorial</span>(n <span class="op">-</span> <span class="num">1</span>)<span class="op">;</span>
 }</pre></div>
         </div>
 
         <h3>void Functions</h3>
-        <p>Functions that produce side effects but return no value use <code>void</code>. The <code>return;</code> statement is optional at the end.</p>
+        <p>Functions that produce side effects but return no value omit the return type entirely.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
             <div class="code-block-body"><pre><span class="kw">#include</span> <span class="str">&lt;stdio.nh&gt;</span>
 
-<span class="typ">void</span> <span class="fn">greet</span>(<span class="typ">string</span> name) {
+<span class="kw">fn</span> <span class="fn">greet</span>(name<span class="op">:</span> <span class="typ">string</span>) {
     <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"Hello, %s\n"</span>, name)<span class="op">;</span>
 }
 
-<span class="typ">void</span> <span class="fn">main</span>() {
+<span class="kw">fn</span> <span class="fn">main</span>() {
     <span class="fn">greet</span>(<span class="str">"world"</span>)<span class="op">;</span>
 }</pre></div>
         </div>
@@ -611,24 +608,25 @@ x<span class="op">--;</span>      <span class="cmt">// x = x - 1</span></pre></d
         <p>Functions can be called as expressions (capturing the return value) or as statements (discarding it):</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
-            <div class="code-block-body"><pre><span class="typ">int</span> result <span class="op">=</span> <span class="fn">add</span>(<span class="num">3</span>, <span class="num">4</span>)<span class="op">;</span>   <span class="cmt">// capture return</span>
+            <div class="code-block-body"><pre><span class="kw">let</span> result<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> <span class="fn">add</span>(<span class="num">3</span>, <span class="num">4</span>)<span class="op">;</span>   <span class="cmt">// capture return</span>
 <span class="fn">add</span>(<span class="num">10</span>, <span class="num">20</span>)<span class="op">;</span>                <span class="cmt">// discard return</span>
 <span class="fn">greet</span>(<span class="str">"Nova"</span>)<span class="op">;</span>             <span class="cmt">// void call</span></pre></div>
         </div>
 
         <h3>Struct Support in Functions</h3>
-        <p>As of version 1.3.0, functions can accept structs as arguments and return structs. The compiler automatically manages the stack memory layout for copying these structures.</p>
+        <p>Functions can accept structs as arguments and return structs. The compiler automatically manages the stack memory layout for copying these structures.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
             <div class="code-block-body"><pre><span class="kw">struct</span> <span class="typ">MyStruct</span> {
-    <span class="typ">int</span> x<span class="op">;</span>
-    <span class="typ">int</span> y<span class="op">;</span>
+    x<span class="op">:</span> <span class="typ">i32</span><span class="op">;</span>
+    y<span class="op">:</span> <span class="typ">i32</span><span class="op">;</span>
 }
 
-<span class="typ">MyStruct</span> <span class="fn">calculate_point</span>(<span class="typ">MyStruct</span> a, <span class="typ">MyStruct</span> b) {
-    <span class="typ">MyStruct</span> c<span class="op">;</span>
-    c<span class="op">.</span>x <span class="op">=</span> a<span class="op">.</span>x <span class="op">+</span> b<span class="op">.</span>x<span class="op">;</span>
-    c<span class="op">.</span>y <span class="op">=</span> a<span class="op">.</span>y <span class="op">+</span> b<span class="op">.</span>y<span class="op">;</span>
+<span class="kw">fn</span> <span class="fn">calculate_point</span>(a<span class="op">:</span> <span class="typ">MyStruct</span>, b<span class="op">:</span> <span class="typ">MyStruct</span>) <span class="op">-&gt;</span> <span class="typ">MyStruct</span> {
+    <span class="kw">let</span> <span class="kw">mut</span> c<span class="op">:</span> <span class="typ">MyStruct</span> <span class="op">=</span> {
+        x<span class="op">:</span> a<span class="op">.</span>x <span class="op">+</span> b<span class="op">.</span>x<span class="op">,</span>
+        y<span class="op">:</span> a<span class="op">.</span>y <span class="op">+</span> b<span class="op">.</span>y
+    }<span class="op">;</span>
     <span class="kw">return</span> c<span class="op">;</span>
 }</pre></div>
         </div>
@@ -640,27 +638,27 @@ x<span class="op">--;</span>      <span class="cmt">// x = x - 1</span></pre></d
         <p>Arrays have a fixed size specified as an integer literal at declaration time. They can be stack-allocated (local) or global.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
-            <div class="code-block-body"><pre><span class="typ">int</span> nums[<span class="num">10</span>]<span class="op">;</span>                          <span class="cmt">// zeroed</span>
-<span class="typ">int</span> primes[<span class="num">5</span>] <span class="op">=</span> {<span class="num">2</span>, <span class="num">3</span>, <span class="num">5</span>, <span class="num">7</span>, <span class="num">11</span>}<span class="op">;</span>   <span class="cmt">// initialized</span>
-<span class="typ">float</span> coords[<span class="num">3</span>] <span class="op">=</span> {<span class="num">1.0</span>, <span class="num">2.5</span>, <span class="num">3.0</span>}<span class="op">;</span>
+            <div class="code-block-body"><pre><span class="kw">let</span> <span class="kw">mut</span> nums<span class="op">:</span> <span class="typ">i32</span>[<span class="num">10</span>] <span class="op">=</span> {}<span class="op">;</span>                          <span class="cmt">// zeroed</span>
+<span class="kw">let</span> <span class="kw">mut</span> primes<span class="op">:</span> <span class="typ">i32</span>[<span class="num">5</span>] <span class="op">=</span> {<span class="num">2</span>, <span class="num">3</span>, <span class="num">5</span>, <span class="num">7</span>, <span class="num">11</span>}<span class="op">;</span>   <span class="cmt">// initialized</span>
+<span class="kw">let</span> <span class="kw">mut</span> coords<span class="op">:</span> <span class="typ">f32</span>[<span class="num">3</span>] <span class="op">=</span> {<span class="num">1.0</span>, <span class="num">2.5</span>, <span class="num">3.0</span>}<span class="op">;</span>
 
-<span class="typ">int</span> x <span class="op">=</span> primes[<span class="num">0</span>]<span class="op">;</span>        <span class="cmt">// read → 2</span>
+<span class="kw">let</span> x<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> primes[<span class="num">0</span>]<span class="op">;</span>        <span class="cmt">// read → 2</span>
 primes[<span class="num">2</span>] <span class="op">=</span> <span class="num">99</span><span class="op">;</span>           <span class="cmt">// write</span>
 primes[i <span class="op">+</span> <span class="num">1</span>] <span class="op">=</span> x<span class="op">;</span>       <span class="cmt">// expression index</span></pre></div>
         </div>
         <div class="warn">Nova performs compile-time bounds checking for literal indices (e.g. <code>arr[10]</code> on a size-5 array is a compile error). Dynamic indices (<code>arr[i]</code>) are not checked at runtime.</div>
 
         <h3>Arrays of Structs</h3>
-        <p>As of version 1.3.0, you can create arrays of user-defined struct types. The compiler correctly calculates the memory offsets for accessing fields within the array elements.</p>
+        <p>You can create arrays of user-defined struct types. The compiler correctly calculates the memory offsets for accessing fields within the array elements.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
             <div class="code-block-body"><pre><span class="kw">struct</span> <span class="typ">Point</span> {
-    <span class="typ">int</span> x<span class="op">;</span>
-    <span class="typ">int</span> y<span class="op">;</span>
+    x<span class="op">:</span> <span class="typ">i32</span><span class="op">;</span>
+    y<span class="op">:</span> <span class="typ">i32</span><span class="op">;</span>
 }
 
-<span class="typ">void</span> <span class="fn">main</span>() {
-    <span class="typ">Point</span> arr[<span class="num">5</span>]<span class="op">;</span>
+<span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="kw">let</span> <span class="kw">mut</span> arr<span class="op">:</span> <span class="typ">Point</span>[<span class="num">5</span>] <span class="op">=</span> {}<span class="op">;</span>
     arr[<span class="num">0</span>]<span class="op">.</span>x <span class="op">=</span> <span class="num">10</span><span class="op">;</span>
     arr[<span class="num">0</span>]<span class="op">.</span>y <span class="op">=</span> <span class="num">20</span><span class="op">;</span>
     <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"%d\n"</span>, arr[<span class="num">0</span>]<span class="op">.</span>x)<span class="op">;</span>
@@ -677,63 +675,65 @@ primes[i <span class="op">+</span> <span class="num">1</span>] <span class="op">
             <div class="code-block-body"><pre><span class="kw">#include</span> <span class="str">&lt;stdio.nh&gt;</span>
 
 <span class="kw">struct</span> <span class="typ">Point</span> {
-    <span class="typ">int</span> x<span class="op">;</span>
-    <span class="typ">int</span> y<span class="op">;</span>
+    x<span class="op">:</span> <span class="typ">i32</span><span class="op">;</span>
+    y<span class="op">:</span> <span class="typ">i32</span><span class="op">;</span>
 }
 
-<span class="typ">void</span> <span class="fn">main</span>() {
-    <span class="typ">Point</span> p<span class="op">;</span>
-    p<span class="op">.</span>x <span class="op">=</span> <span class="num">3</span><span class="op">;</span>
-    p<span class="op">.</span>y <span class="op">=</span> <span class="num">4</span><span class="op">;</span>
-    <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"%d\n"</span>, p<span class="op">.</span>x)<span class="op">;</span>   <span class="cmt">// 3</span>
+<span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="kw">let</span> point<span class="op">:</span> <span class="typ">Point</span> <span class="op">=</span> {
+        x<span class="op">:</span> <span class="num">1</span><span class="op">,</span>
+        y<span class="op">:</span> <span class="num">2</span>
+    }<span class="op">;</span>
+    <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"%d\n"</span>, point<span class="op">.</span>x)<span class="op">;</span>   <span class="cmt">// 1</span>
 }</pre></div>
         </div>
 
         <h3>Methods</h3>
-        <p>Functions can be defined inside a struct. Inside a method, all fields are accessible directly by name. Field changes are written back to the instance automatically.</p>
+        <p>Functions can be defined inside an <code>impl</code> block. Inside a method, all fields are accessible via <code>self</code>. Field changes are written back to the instance automatically.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
             <div class="code-block-body"><pre><span class="kw">#include</span> <span class="str">&lt;stdio.nh&gt;</span>
 
 <span class="kw">struct</span> <span class="typ">Counter</span> {
-    <span class="typ">int</span> value<span class="op">;</span>
+    value<span class="op">:</span> <span class="typ">i32</span><span class="op">;</span>
+}
 
-    <span class="typ">void</span> <span class="fn">increment</span>(<span class="typ">int</span> n) {
-        value <span class="op">=</span> value <span class="op">+</span> n<span class="op">;</span>
+<span class="kw">impl</span> <span class="typ">Counter</span> {
+    <span class="kw">fn</span> <span class="fn">increment</span>(<span class="op">&amp;</span><span class="kw">mut</span> <span class="kw">self</span>, n<span class="op">:</span> <span class="typ">i32</span>) {
+        <span class="kw">self</span><span class="op">.</span>value <span class="op">+=</span> n<span class="op">;</span>
     }
 
-    <span class="typ">int</span> <span class="fn">get</span>() {
-        <span class="kw">return</span> value<span class="op">;</span>
+    <span class="kw">fn</span> <span class="fn">get</span>(<span class="op">&amp;</span><span class="kw">self</span>) <span class="op">-&gt;</span> <span class="typ">i32</span> {
+        <span class="kw">return</span> <span class="kw">self</span><span class="op">.</span>value<span class="op">;</span>
     }
 }
 
-<span class="typ">void</span> <span class="fn">main</span>() {
-    <span class="typ">Counter</span> c<span class="op">;</span>
-    c<span class="op">.</span>value <span class="op">=</span> <span class="num">0</span><span class="op">;</span>
+<span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="kw">let</span> <span class="kw">mut</span> c<span class="op">:</span> <span class="typ">Counter</span> <span class="op">=</span> { value<span class="op">:</span> <span class="num">0</span> }<span class="op">;</span>
     c<span class="op">.</span><span class="fn">increment</span>(<span class="num">5</span>)<span class="op">;</span>
     <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"%d\n"</span>, c<span class="op">.</span><span class="fn">get</span>())<span class="op">;</span>   <span class="cmt">// 5</span>
 }</pre></div>
         </div>
-        <div class="note">Struct fields support all primitive types: <code>int</code>, <code>long</code>, <code>float</code>, <code>double</code>, <code>char</code>, <code>string</code>. Nested structs are not yet supported.</div>
+        <div class="note">Struct fields support all primitive types: <code>i32</code>, <code>i64</code>, <code>f32</code>, <code>f64</code>, <code>char</code>, <code>string</code>. Nested structs are not yet supported.</div>
     </div>
 
     <div class="docs-section" id="casts">
         <div class="section-eyebrow">Types</div>
         <h2>Explicit Casts</h2>
-        <p>Use C-style casts to convert between types. The compiler warns when precision is lost.</p>
+        <p>Use <code>VAR as TYPE</code> to cast. The compiler warns when precision is lost.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
-            <div class="code-block-body"><pre><span class="typ">int</span> a <span class="op">=</span> <span class="num">7</span><span class="op">;</span>
-<span class="typ">double</span> d <span class="op">=</span> (<span class="typ">double</span>)a <span class="op">/</span> <span class="num">2.0</span><span class="op">;</span>   <span class="cmt">// → 3.5</span>
+            <div class="code-block-body"><pre><span class="kw">let</span> a<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> <span class="num">7</span><span class="op">;</span>
+<span class="kw">let</span> d<span class="op">:</span> <span class="typ">f64</span> <span class="op">=</span> a <span class="kw">as</span> <span class="typ">f64</span> <span class="op">/</span> <span class="num">2.0</span><span class="op">;</span>   <span class="cmt">// → 3.5</span>
 
-<span class="typ">double</span> pi <span class="op">=</span> <span class="num">3.14159</span><span class="op">;</span>
-<span class="typ">int</span> truncated <span class="op">=</span> (<span class="typ">int</span>)pi<span class="op">;</span>       <span class="cmt">// → 3</span>
+<span class="kw">let</span> pi<span class="op">:</span> <span class="typ">f64</span> <span class="op">=</span> <span class="num">3.14159</span><span class="op">;</span>
+<span class="kw">let</span> truncated<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> pi <span class="kw">as</span> <span class="typ">i32</span><span class="op">;</span>       <span class="cmt">// → 3</span>
 
-<span class="typ">int</span> small <span class="op">=</span> <span class="num">1000000</span><span class="op">;</span>
-<span class="typ">long</span> big <span class="op">=</span> (<span class="typ">long</span>)small <span class="op">*</span> <span class="num">1000000</span><span class="op">;</span>
+<span class="kw">let</span> small<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> <span class="num">1000000</span><span class="op">;</span>
+<span class="kw">let</span> big<span class="op">:</span> <span class="typ">i64</span> <span class="op">=</span> small <span class="kw">as</span> <span class="typ">i64</span> <span class="op">*</span> <span class="num">1000000</span><span class="op">;</span>
 
-<span class="typ">char</span> ch <span class="op">=</span> <span class="str">'A'</span><span class="op">;</span>
-<span class="typ">int</span> code <span class="op">=</span> (<span class="typ">int</span>)ch<span class="op">;</span>             <span class="cmt">// → 65</span></pre></div>
+<span class="kw">let</span> ch<span class="op">:</span> <span class="typ">char</span> <span class="op">=</span> <span class="str">'A'</span><span class="op">;</span>
+<span class="kw">let</span> code<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> ch <span class="kw">as</span> <span class="typ">i32</span><span class="op">;</span>             <span class="cmt">// → 65</span></pre></div>
         </div>
     </div>
 
@@ -742,29 +742,29 @@ primes[i <span class="op">+</span> <span class="num">1</span>] <span class="op">
         <h2>Type Safety</h2>
         <p>Nova enforces strict type rules at compile time. There are no implicit conversions between numeric types — explicit casts are required.</p>
 
-        <h3>No implicit int ↔ float conversion</h3>
-        <p>Arithmetic between <code>int</code> and <code>float</code> is a compile error. Both sides must be the same type.</p>
+        <h3>No implicit i32 ↔ f32 conversion</h3>
+        <p>Arithmetic between <code>i32</code> and <code>f32</code> is a compile error. Both sides must be the same type.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
-            <div class="code-block-body"><pre><span class="typ">float</span> x <span class="op">=</span> <span class="num">3.14</span><span class="op">;</span>
-<span class="typ">int</span>   n <span class="op">=</span> <span class="num">2</span><span class="op">;</span>
-<span class="cmt">// float r = x * n;    ← ERROR: cannot mix float and int</span>
-<span class="typ">float</span> r <span class="op">=</span> x <span class="op">*</span> <span class="num">2.0</span><span class="op">;</span>   <span class="cmt">// OK</span></pre></div>
+            <div class="code-block-body"><pre><span class="kw">let</span> x<span class="op">:</span> <span class="typ">f32</span> <span class="op">=</span> <span class="num">3.14</span><span class="op">;</span>
+<span class="kw">let</span> n<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> <span class="num">2</span><span class="op">;</span>
+<span class="cmt">// let r: f32 = x * n;    ← ERROR: cannot mix f32 and i32</span>
+<span class="kw">let</span> r<span class="op">:</span> <span class="typ">f32</span> <span class="op">=</span> x <span class="op">*</span> <span class="num">2.0</span><span class="op">;</span>   <span class="cmt">// OK</span></pre></div>
         </div>
 
         <h3>Literal type must match declaration</h3>
-        <p>Initializing a <code>float</code> variable with an integer literal is an error — the compiler suggests the fix.</p>
+        <p>Initializing an <code>f32</code> variable with an integer literal is an error — the compiler suggests the fix.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
-            <div class="code-block-body"><pre><span class="cmt">// float radius = 2;     ← ERROR: use 2.0</span>
-<span class="typ">float</span> radius <span class="op">=</span> <span class="num">2.0</span><span class="op">;</span>  <span class="cmt">// OK</span></pre></div>
+            <div class="code-block-body"><pre><span class="cmt">// let radius: f32 = 2;     ← ERROR: use 2.0</span>
+<span class="kw">let</span> radius<span class="op">:</span> <span class="typ">f32</span> <span class="op">=</span> <span class="num">2.0</span><span class="op">;</span>  <span class="cmt">// OK</span></pre></div>
         </div>
 
         <h3>Compile-time array bounds checking</h3>
         <p>Accessing an array with a literal index that is out of range is caught at compile time.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
-            <div class="code-block-body"><pre><span class="typ">int</span> arr[<span class="num">5</span>]<span class="op">;</span>
+            <div class="code-block-body"><pre><span class="kw">let</span> <span class="kw">mut</span> arr<span class="op">:</span> <span class="typ">i32</span>[<span class="num">5</span>] <span class="op">=</span> {}<span class="op">;</span>
 <span class="cmt">// arr[10] = 1;   ← ERROR: index 10 out of bounds (valid: 0..4)</span>
 arr[<span class="num">4</span>] <span class="op">=</span> <span class="num">1</span><span class="op">;</span>        <span class="cmt">// OK</span>
 arr[i] <span class="op">=</span> <span class="num">1</span><span class="op">;</span>        <span class="cmt">// OK — dynamic index not checked</span></pre></div>
@@ -780,13 +780,13 @@ arr[i] <span class="op">=</span> <span class="num">1</span><span class="op">;</s
 
     <div class="docs-section" id="stdio">
         <div class="section-eyebrow">Standard Library</div>
-        <h2>stdio — printf &amp; print</h2>
-        <p>Include <code>&lt;stdio.nh&gt;</code> to get <code>std::printf</code> for formatted output and <code>std::print</code> for quick single-value output. Both are implemented without libc — they use the <code>write</code> syscall directly.</p>
+        <h2>stdio — printf, print &amp; scanf</h2>
+        <p>Include <code>&lt;stdio.nh&gt;</code> to get <code>std::printf</code> for formatted output, <code>std::print</code> for quick single-value output, and <code>std::scanf</code> for formatted input. All are implemented without libc — they use syscalls directly.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="code-filename">hello.npp</div></div>
             <div class="code-block-body"><pre><span class="kw">#include</span> <span class="str">&lt;stdio.nh&gt;</span>
 
-<span class="typ">void</span> <span class="fn">main</span>() {
+<span class="kw">fn</span> <span class="fn">main</span>() {
     <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"Hello, %s!\n"</span>, <span class="str">"World"</span>)<span class="op">;</span>
     <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"int: %d  long: %ld  double: %f\n"</span>, <span class="num">42</span>, <span class="num">9876543210</span>, <span class="num">3.14</span>)<span class="op">;</span>
     <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"char: %c  str: %s\n"</span>, <span class="str">'A'</span>, <span class="str">"nova"</span>)<span class="op">;</span>
@@ -796,11 +796,11 @@ arr[i] <span class="op">=</span> <span class="num">1</span><span class="op">;</s
         <table class="docs-table">
             <thead><tr><th>Specifier</th><th>Type</th></tr></thead>
             <tbody>
-                <tr><td>%d  %i</td><td>int (signed)</td></tr>
-                <tr><td>%u</td><td>int (unsigned)</td></tr>
-                <tr><td>%ld  %li</td><td>long (signed)</td></tr>
-                <tr><td>%lu</td><td>long (unsigned)</td></tr>
-                <tr><td>%f  %g  %e</td><td>float or double</td></tr>
+                <tr><td>%d  %i</td><td>i32 (signed)</td></tr>
+                <tr><td>%u</td><td>i32 (unsigned)</td></tr>
+                <tr><td>%ld  %li</td><td>i64 (signed)</td></tr>
+                <tr><td>%lu</td><td>i64 (unsigned)</td></tr>
+                <tr><td>%f  %g  %e</td><td>f32 or f64</td></tr>
                 <tr><td>%c</td><td>char</td></tr>
                 <tr><td>%s</td><td>string</td></tr>
                 <tr><td>%%</td><td>literal %</td></tr>
@@ -812,12 +812,24 @@ arr[i] <span class="op">=</span> <span class="num">1</span><span class="op">;</s
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
             <div class="code-block-body"><pre><span class="kw">#include</span> <span class="str">&lt;stdio.nh&gt;</span>
 
-<span class="typ">void</span> <span class="fn">main</span>() {
-    <span class="fn">std</span><span class="op">::</span><span class="fn">print</span>(<span class="num">42</span>)<span class="op">;</span>           <span class="cmt">// int</span>
-    <span class="fn">std</span><span class="op">::</span><span class="fn">print</span>(<span class="num">3.14</span>)<span class="op">;</span>         <span class="cmt">// double</span>
+<span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="fn">std</span><span class="op">::</span><span class="fn">print</span>(<span class="num">42</span>)<span class="op">;</span>           <span class="cmt">// i32</span>
+    <span class="fn">std</span><span class="op">::</span><span class="fn">print</span>(<span class="num">3.14</span>)<span class="op">;</span>         <span class="cmt">// f64</span>
     <span class="fn">std</span><span class="op">::</span><span class="fn">print</span>(<span class="str">"hello"</span>)<span class="op">;</span>      <span class="cmt">// string</span>
     <span class="fn">std</span><span class="op">::</span><span class="fn">print</span>(<span class="str">'Z'</span>)<span class="op">;</span>          <span class="cmt">// char</span>
-    <span class="fn">std</span><span class="op">::</span><span class="fn">print</span>(<span class="num">9876543210</span>)<span class="op">;</span>  <span class="cmt">// long (auto-promoted)</span>
+    <span class="fn">std</span><span class="op">::</span><span class="fn">print</span>(<span class="num">9876543210</span>)<span class="op">;</span>   <span class="cmt">// i64 (auto-promoted)</span>
+}</pre></div>
+        </div>
+        <h3>std::scanf — formatted input</h3>
+        <p><code>std::scanf</code> reads formatted input from stdin. It works exactly like C's <code>scanf</code> — same format specifiers, same pointer arguments.</p>
+        <div class="code-block">
+            <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
+            <div class="code-block-body"><pre><span class="kw">#include</span> <span class="str">&lt;stdio.nh&gt;</span>
+
+<span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="kw">let</span> <span class="kw">mut</span> n<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> <span class="num">0</span><span class="op">;</span>
+    <span class="fn">std</span><span class="op">::</span><span class="fn">scanf</span>(<span class="str">"%d"</span>, <span class="op">&amp;</span>n)<span class="op">;</span>
+    <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"you entered: %d\n"</span>, n)<span class="op">;</span>
 }</pre></div>
         </div>
     </div>
@@ -825,15 +837,15 @@ arr[i] <span class="op">=</span> <span class="num">1</span><span class="op">;</s
     <div class="docs-section" id="math">
         <div class="section-eyebrow">Standard Library</div>
         <h2>math — sqrt</h2>
-        <p>Include <code>&lt;math.nh&gt;</code> for mathematical functions. <code>std::sqrt</code> is overloaded for <code>int</code>, <code>float</code>, and <code>double</code>.</p>
+        <p>Include <code>&lt;math.nh&gt;</code> for mathematical functions. <code>std::sqrt</code> is overloaded for <code>i32</code>, <code>f32</code>, and <code>f64</code>.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
             <div class="code-block-body"><pre><span class="kw">#include</span> <span class="str">&lt;stdio.nh&gt;</span>
 <span class="kw">#include</span> <span class="str">&lt;math.nh&gt;</span>
 
-<span class="typ">void</span> <span class="fn">main</span>() {
-    <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"%f\n"</span>, <span class="fn">std</span><span class="op">::</span><span class="fn">sqrt</span>(<span class="num">2</span>))<span class="op">;</span>    <span class="cmt">// int overload → 1.414214</span>
-    <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"%f\n"</span>, <span class="fn">std</span><span class="op">::</span><span class="fn">sqrt</span>(<span class="num">9.0</span>))<span class="op">;</span>  <span class="cmt">// double overload → 3.000000</span>
+<span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"%f\n"</span>, <span class="fn">std</span><span class="op">::</span><span class="fn">sqrt</span>(<span class="num">2</span>))<span class="op">;</span>    <span class="cmt">// i32 overload → 1.414214</span>
+    <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"%f\n"</span>, <span class="fn">std</span><span class="op">::</span><span class="fn">sqrt</span>(<span class="num">9.0</span>))<span class="op">;</span>  <span class="cmt">// f64 overload → 3.000000</span>
 }</pre></div>
         </div>
     </div>
@@ -846,20 +858,19 @@ arr[i] <span class="op">=</span> <span class="num">1</span><span class="op">;</s
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="code-filename">mylib.nh</div></div>
             <div class="code-block-body"><pre><span class="kw">namespace</span> <span class="typ">math</span><span class="op">;</span>
 
-<span class="typ">int</span> <span class="fn">add</span>(<span class="typ">int</span> a, <span class="typ">int</span> b)<span class="op">;</span>
-<span class="typ">double</span> <span class="fn">square</span>(<span class="typ">double</span> x)<span class="op">;</span></pre></div>
+<span class="kw">fn</span> <span class="fn">add</span>(a<span class="op">:</span> <span class="typ">i32</span>, b<span class="op">:</span> <span class="typ">i32</span>) <span class="op">-&gt;</span> <span class="typ">i32</span><span class="op">;</span>
+<span class="kw">fn</span> <span class="fn">square</span>(x<span class="op">:</span> <span class="typ">f64</span>) <span class="op">-&gt;</span> <span class="typ">f64</span><span class="op">;</span></pre></div>
         </div>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="code-filename">main.npp</div></div>
             <div class="code-block-body"><pre><span class="kw">#include</span> <span class="str">&lt;stdio.nh&gt;</span>
 <span class="kw">#include</span> <span class="str">"mylib.nh"</span>
 
-<span class="typ">void</span> <span class="fn">main</span>() {
+<span class="kw">fn</span> <span class="fn">main</span>() {
     <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"%d\n"</span>, <span class="fn">math</span><span class="op">::</span><span class="fn">add</span>(<span class="num">3</span>, <span class="num">4</span>))<span class="op">;</span>
 }</pre></div>
         </div>
         <div class="note">Calling a namespace function without the correct prefix — or without the corresponding <code>#include</code> — is a compile-time error.</div>
-        <div class="warn"><strong>Beta 1.3.0 Breaking Change:</strong> The use of namespaces defined in header files (<code>.nh</code>) is now strictly mandatory for accessing structs and functions bound to them.</div>
     </div>
 
     <div class="docs-section" id="overloading">
@@ -870,12 +881,12 @@ arr[i] <span class="op">=</span> <span class="num">1</span><span class="op">;</s
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
             <div class="code-block-body"><pre><span class="kw">#include</span> <span class="str">&lt;stdio.nh&gt;</span>
 
-<span class="typ">int</span> <span class="fn">square</span>(<span class="typ">int</span> x)    { <span class="kw">return</span> x <span class="op">*</span> x<span class="op">;</span> }
-<span class="typ">double</span> <span class="fn">square</span>(<span class="typ">double</span> x) { <span class="kw">return</span> x <span class="op">*</span> x<span class="op">;</span> }
+<span class="kw">fn</span> <span class="fn">square</span>(x<span class="op">:</span> <span class="typ">i32</span>) <span class="op">-&gt;</span> <span class="typ">i32</span>   { <span class="kw">return</span> x <span class="op">*</span> x<span class="op">;</span> }
+<span class="kw">fn</span> <span class="fn">square</span>(x<span class="op">:</span> <span class="typ">f64</span>) <span class="op">-&gt;</span> <span class="typ">f64</span>   { <span class="kw">return</span> x <span class="op">*</span> x<span class="op">;</span> }
 
-<span class="typ">void</span> <span class="fn">main</span>() {
-    <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"%d\n"</span>,   <span class="fn">square</span>(<span class="num">5</span>))<span class="op">;</span>     <span class="cmt">// → 25 (int)</span>
-    <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"%f\n"</span>, <span class="fn">square</span>(<span class="num">2.5</span>))<span class="op">;</span>   <span class="cmt">// → 6.250000 (double)</span>
+<span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"%d\n"</span>,   <span class="fn">square</span>(<span class="num">5</span>))<span class="op">;</span>     <span class="cmt">// → 25 (i32)</span>
+    <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"%f\n"</span>, <span class="fn">square</span>(<span class="num">2.5</span>))<span class="op">;</span>   <span class="cmt">// → 6.250000 (f64)</span>
 }</pre></div>
         </div>
     </div>
@@ -895,33 +906,33 @@ arr[i] <span class="op">=</span> <span class="num">1</span><span class="op">;</s
 
 <span class="cmt">// Struct declarations are allowed in headers</span>
 <span class="kw">struct</span> <span class="typ">Point</span> {
-    <span class="typ">double</span> x<span class="op">;</span>
-    <span class="typ">double</span> y<span class="op">;</span>
+    x<span class="op">:</span> <span class="typ">f64</span><span class="op">;</span>
+    y<span class="op">:</span> <span class="typ">f64</span><span class="op">;</span>
 }
 
 <span class="cmt">// Function signatures — type + name + params + semicolon, no body</span>
-<span class="typ">double</span> <span class="fn">distance</span>(<span class="typ">double</span> x1, <span class="typ">double</span> y1, <span class="typ">double</span> x2, <span class="typ">double</span> y2)<span class="op">;</span>
-<span class="typ">double</span> <span class="fn">area</span>(<span class="typ">double</span> base, <span class="typ">double</span> height)<span class="op">;</span>
-<span class="typ">int</span>    <span class="fn">sign</span>(<span class="typ">int</span> n)<span class="op">;</span></pre></div>
+<span class="kw">fn</span> <span class="fn">distance</span>(x1<span class="op">:</span> <span class="typ">f64</span>, y1<span class="op">:</span> <span class="typ">f64</span>, x2<span class="op">:</span> <span class="typ">f64</span>, y2<span class="op">:</span> <span class="typ">f64</span>) <span class="op">-&gt;</span> <span class="typ">f64</span><span class="op">;</span>
+<span class="kw">fn</span> <span class="fn">area</span>(base<span class="op">:</span> <span class="typ">f64</span>, height<span class="op">:</span> <span class="typ">f64</span>) <span class="op">-&gt;</span> <span class="typ">f64</span><span class="op">;</span>
+<span class="kw">fn</span> <span class="fn">sign</span>(n<span class="op">:</span> <span class="typ">i32</span>) <span class="op">-&gt;</span> <span class="typ">i32</span><span class="op">;</span></pre></div>
         </div>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="code-filename">geometry.npp</div></div>
             <div class="code-block-body"><pre><span class="kw">#include</span> <span class="str">&lt;stdio.nh&gt;</span>
 <span class="kw">#include</span> <span class="str">&lt;math.nh&gt;</span>
 
-<span class="typ">double</span> <span class="fn">distance</span>(<span class="typ">double</span> x1, <span class="typ">double</span> y1, <span class="typ">double</span> x2, <span class="typ">double</span> y2) {
-    <span class="typ">double</span> dx <span class="op">=</span> x2 <span class="op">-</span> x1<span class="op">;</span>
-    <span class="typ">double</span> dy <span class="op">=</span> y2 <span class="op">-</span> y1<span class="op">;</span>
+<span class="kw">fn</span> <span class="fn">distance</span>(x1<span class="op">:</span> <span class="typ">f64</span>, y1<span class="op">:</span> <span class="typ">f64</span>, x2<span class="op">:</span> <span class="typ">f64</span>, y2<span class="op">:</span> <span class="typ">f64</span>) <span class="op">-&gt;</span> <span class="typ">f64</span> {
+    <span class="kw">let</span> dx<span class="op">:</span> <span class="typ">f64</span> <span class="op">=</span> x2 <span class="op">-</span> x1<span class="op">;</span>
+    <span class="kw">let</span> dy<span class="op">:</span> <span class="typ">f64</span> <span class="op">=</span> y2 <span class="op">-</span> y1<span class="op">;</span>
     <span class="kw">return</span> <span class="fn">std</span><span class="op">::</span><span class="fn">sqrt</span>(dx <span class="op">*</span> dx <span class="op">+</span> dy <span class="op">*</span> dy)<span class="op">;</span>
 }
 
-<span class="typ">double</span> <span class="fn">area</span>(<span class="typ">double</span> base, <span class="typ">double</span> height) {
+<span class="kw">fn</span> <span class="fn">area</span>(base<span class="op">:</span> <span class="typ">f64</span>, height<span class="op">:</span> <span class="typ">f64</span>) <span class="op">-&gt;</span> <span class="typ">f64</span> {
     <span class="kw">return</span> base <span class="op">*</span> height <span class="op">/</span> <span class="num">2.0</span><span class="op">;</span>
 }
 
-<span class="typ">int</span> <span class="fn">sign</span>(<span class="typ">int</span> n) {
-    <span class="kw">if</span>(n <span class="op">&gt;</span> <span class="num">0</span>) <span class="kw">then</span> { <span class="kw">return</span> <span class="num">1</span><span class="op">;</span> }
-    <span class="kw">if</span>(n <span class="op">&lt;</span> <span class="num">0</span>) <span class="kw">then</span> { <span class="kw">return</span> <span class="num">0</span> <span class="op">-</span> <span class="num">1</span><span class="op">;</span> }
+<span class="kw">fn</span> <span class="fn">sign</span>(n<span class="op">:</span> <span class="typ">i32</span>) <span class="op">-&gt;</span> <span class="typ">i32</span> {
+    <span class="kw">if</span>(n <span class="op">&gt;</span> <span class="num">0</span>) { <span class="kw">return</span> <span class="num">1</span><span class="op">;</span> }
+    <span class="kw">if</span>(n <span class="op">&lt;</span> <span class="num">0</span>) { <span class="kw">return</span> <span class="num">0</span> <span class="op">-</span> <span class="num">1</span><span class="op">;</span> }
     <span class="kw">return</span> <span class="num">0</span><span class="op">;</span>
 }</pre></div>
         </div>
@@ -930,14 +941,12 @@ arr[i] <span class="op">=</span> <span class="num">1</span><span class="op">;</s
             <div class="code-block-body"><pre><span class="kw">#include</span> <span class="str">&lt;stdio.nh&gt;</span>
 <span class="kw">#include</span> <span class="str">"geometry.nh"</span>
 
-<span class="typ">void</span> <span class="fn">main</span>() {
-    <span class="typ">double</span> d <span class="op">=</span> <span class="fn">geo</span><span class="op">::</span><span class="fn">distance</span>(<span class="num">0.0</span>, <span class="num">0.0</span>, <span class="num">3.0</span>, <span class="num">4.0</span>)<span class="op">;</span>
-    <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"distance = %f
-"</span>, d)<span class="op">;</span>   <span class="cmt">// 5.000000</span>
+<span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="kw">let</span> d<span class="op">:</span> <span class="typ">f64</span> <span class="op">=</span> <span class="fn">geo</span><span class="op">::</span><span class="fn">distance</span>(<span class="num">0.0</span>, <span class="num">0.0</span>, <span class="num">3.0</span>, <span class="num">4.0</span>)<span class="op">;</span>
+    <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"distance = %f\n"</span>, d)<span class="op">;</span>   <span class="cmt">// 5.000000</span>
 
-    <span class="typ">double</span> a <span class="op">=</span> <span class="fn">geo</span><span class="op">::</span><span class="fn">area</span>(<span class="num">6.0</span>, <span class="num">4.0</span>)<span class="op">;</span>
-    <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"area = %f
-"</span>, a)<span class="op">;</span>       <span class="cmt">// 12.000000</span>
+    <span class="kw">let</span> a<span class="op">:</span> <span class="typ">f64</span> <span class="op">=</span> <span class="fn">geo</span><span class="op">::</span><span class="fn">area</span>(<span class="num">6.0</span>, <span class="num">4.0</span>)<span class="op">;</span>
+    <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"area = %f\n"</span>, a)<span class="op">;</span>       <span class="cmt">// 12.000000</span>
 }</pre></div>
         </div>
 
@@ -961,13 +970,13 @@ arr[i] <span class="op">=</span> <span class="num">1</span><span class="op">;</s
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
             <div class="code-block-body"><pre><span class="cmt">// ✗ Avoid — names pollute global scope, collisions are silent</span>
-<span class="typ">int</span> <span class="fn">clamp</span>(<span class="typ">int</span> v, <span class="typ">int</span> lo, <span class="typ">int</span> hi)<span class="op">;</span>
-<span class="typ">double</span> <span class="fn">lerp</span>(<span class="typ">double</span> a, <span class="typ">double</span> b, <span class="typ">double</span> t)<span class="op">;</span>
+<span class="kw">fn</span> <span class="fn">clamp</span>(v<span class="op">:</span> <span class="typ">i32</span>, lo<span class="op">:</span> <span class="typ">i32</span>, hi<span class="op">:</span> <span class="typ">i32</span>) <span class="op">-&gt;</span> <span class="typ">i32</span><span class="op">;</span>
+<span class="kw">fn</span> <span class="fn">lerp</span>(a<span class="op">:</span> <span class="typ">f64</span>, b<span class="op">:</span> <span class="typ">f64</span>, t<span class="op">:</span> <span class="typ">f64</span>) <span class="op">-&gt;</span> <span class="typ">f64</span><span class="op">;</span>
 
 <span class="cmt">// ✓ Prefer — origin is clear, call site is unambiguous</span>
 <span class="kw">namespace</span> <span class="typ">math</span><span class="op">;</span>
-<span class="typ">int</span> <span class="fn">clamp</span>(<span class="typ">int</span> v, <span class="typ">int</span> lo, <span class="typ">int</span> hi)<span class="op">;</span>
-<span class="typ">double</span> <span class="fn">lerp</span>(<span class="typ">double</span> a, <span class="typ">double</span> b, <span class="typ">double</span> t)<span class="op">;</span></pre></div>
+<span class="kw">fn</span> <span class="fn">clamp</span>(v<span class="op">:</span> <span class="typ">i32</span>, lo<span class="op">:</span> <span class="typ">i32</span>, hi<span class="op">:</span> <span class="typ">i32</span>) <span class="op">-&gt;</span> <span class="typ">i32</span><span class="op">;</span>
+<span class="kw">fn</span> <span class="fn">lerp</span>(a<span class="op">:</span> <span class="typ">f64</span>, b<span class="op">:</span> <span class="typ">f64</span>, t<span class="op">:</span> <span class="typ">f64</span>) <span class="op">-&gt;</span> <span class="typ">f64</span><span class="op">;</span></pre></div>
         </div>
         <p>With a namespace, call sites become self-documenting — <code>math::clamp(x, 0, 100)</code> is immediately obvious in a way that bare <code>clamp(x, 0, 100)</code> never is.</p>
 
@@ -980,30 +989,30 @@ arr[i] <span class="op">=</span> <span class="num">1</span><span class="op">;</s
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
             <div class="code-block-body"><pre><span class="cmt">// ✗ Avoid</span>
-<span class="typ">int</span>    <span class="fn">absInt</span>(<span class="typ">int</span> n)       { <span class="kw">return</span> n <span class="op">&lt;</span> <span class="num">0</span> ? <span class="num">0</span> <span class="op">-</span> n : n<span class="op">;</span> }
-<span class="typ">double</span> <span class="fn">absDouble</span>(<span class="typ">double</span> n) { <span class="kw">return</span> n <span class="op">&lt;</span> <span class="num">0.0</span> ? <span class="num">0.0</span> <span class="op">-</span> n : n<span class="op">;</span> }
+<span class="kw">fn</span> <span class="fn">absInt</span>(n<span class="op">:</span> <span class="typ">i32</span>) <span class="op">-&gt;</span> <span class="typ">i32</span>    { <span class="kw">return</span> n <span class="op">&lt;</span> <span class="num">0</span> ? <span class="num">0</span> <span class="op">-</span> n : n<span class="op">;</span> }
+<span class="kw">fn</span> <span class="fn">absDouble</span>(n<span class="op">:</span> <span class="typ">f64</span>) <span class="op">-&gt;</span> <span class="typ">f64</span> { <span class="kw">return</span> n <span class="op">&lt;</span> <span class="num">0.0</span> ? <span class="num">0.0</span> <span class="op">-</span> n : n<span class="op">;</span> }
 
 <span class="cmt">// ✓ Prefer</span>
-<span class="typ">int</span>    <span class="fn">abs</span>(<span class="typ">int</span> n)    { <span class="kw">return</span> n <span class="op">&lt;</span> <span class="num">0</span> ? <span class="num">0</span> <span class="op">-</span> n : n<span class="op">;</span> }
-<span class="typ">double</span> <span class="fn">abs</span>(<span class="typ">double</span> n) { <span class="kw">return</span> n <span class="op">&lt;</span> <span class="num">0.0</span> ? <span class="num">0.0</span> <span class="op">-</span> n : n<span class="op">;</span> }</pre></div>
+<span class="kw">fn</span> <span class="fn">abs</span>(n<span class="op">:</span> <span class="typ">i32</span>) <span class="op">-&gt;</span> <span class="typ">i32</span>    { <span class="kw">return</span> n <span class="op">&lt;</span> <span class="num">0</span> ? <span class="num">0</span> <span class="op">-</span> n : n<span class="op">;</span> }
+<span class="kw">fn</span> <span class="fn">abs</span>(n<span class="op">:</span> <span class="typ">f64</span>) <span class="op">-&gt;</span> <span class="typ">f64</span>    { <span class="kw">return</span> n <span class="op">&lt;</span> <span class="num">0.0</span> ? <span class="num">0.0</span> <span class="op">-</span> n : n<span class="op">;</span> }</pre></div>
         </div>
 
-        <h3>Use long for large integers</h3>
-        <p><code>int</code> holds values up to 2,147,483,647. For counters, byte offsets, or values that can exceed that range, use <code>long</code>. Integer literals larger than INT_MAX are automatically promoted to <code>long</code> by the compiler — but when doing arithmetic that could overflow, cast explicitly before the operation.</p>
+        <h3>Use i64 for large integers</h3>
+        <p><code>i32</code> holds values up to 2,147,483,647. For counters, byte offsets, or values that can exceed that range, use <code>i64</code>. Integer literals larger than that limit are automatically promoted to <code>i64</code> by the compiler — but when doing arithmetic that could overflow, cast explicitly before the operation.</p>
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
-            <div class="code-block-body"><pre><span class="cmt">// ✗ Overflow — arithmetic done in int, widened too late</span>
-<span class="typ">long</span> bad  <span class="op">=</span> <span class="num">1000000</span> <span class="op">*</span> <span class="num">1000000</span><span class="op">;</span>
+            <div class="code-block-body"><pre><span class="cmt">// ✗ Overflow — arithmetic done in i32, widened too late</span>
+<span class="kw">let</span> bad<span class="op">:</span> <span class="typ">i64</span>  <span class="op">=</span> <span class="num">1000000</span> <span class="op">*</span> <span class="num">1000000</span><span class="op">;</span>
 
 <span class="cmt">// ✓ Correct — cast before the multiplication</span>
-<span class="typ">long</span> good <span class="op">=</span> (<span class="typ">long</span>)<span class="num">1000000</span> <span class="op">*</span> <span class="num">1000000</span><span class="op">;</span>
+<span class="kw">let</span> good<span class="op">:</span> <span class="typ">i64</span> <span class="op">=</span> <span class="num">1000000</span> <span class="kw">as</span> <span class="typ">i64</span> <span class="op">*</span> <span class="num">1000000</span><span class="op">;</span>
 
-<span class="cmt">// ✓ Auto-promoted — literal exceeds INT_MAX</span>
-<span class="typ">long</span> size <span class="op">=</span> <span class="num">9876543210</span><span class="op">;</span></pre></div>
+<span class="cmt">// ✓ Auto-promoted — literal exceeds i32 max</span>
+<span class="kw">let</span> size<span class="op">:</span> <span class="typ">i64</span> <span class="op">=</span> <span class="num">9876543210</span><span class="op">;</span></pre></div>
         </div>
 
-        <h3>Prefer double over float for precision</h3>
-        <p><code>double</code> gives 15–16 significant digits; <code>float</code> gives only 6–7. Use <code>float</code> only when you specifically need 32-bit representation — for example, when interfacing with hardware or external binary formats that require it.</p>
+        <h3>Prefer f64 over f32 for precision</h3>
+        <p><code>f64</code> gives 15–16 significant digits; <code>f32</code> gives only 6–7. Use <code>f32</code> only when you specifically need 32-bit representation — for example, when interfacing with hardware or external binary formats that require it.</p>
 
         <h3>One concern per .npp file</h3>
         <p>Keep each <code>.npp</code> focused on a single topic — strings, geometry, IO. Pair it with a <code>.nh</code> that exposes only what callers need and hides internal helpers. This makes each module independently testable and easy to reuse across projects.</p>
@@ -1016,7 +1025,7 @@ arr[i] <span class="op">=</span> <span class="num">1</span><span class="op">;</s
         <div class="code-block">
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
             <div class="code-block-body"><pre><span class="cmt">// This is a comment</span>
-<span class="typ">int</span> x <span class="op">=</span> <span class="num">10</span><span class="op">;</span>   <span class="cmt">// inline comment</span></pre></div>
+<span class="kw">let</span> x<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> <span class="num">10</span><span class="op">;</span>   <span class="cmt">// inline comment</span></pre></div>
         </div>
     </div>
 
@@ -1089,13 +1098,13 @@ $ n++ -w myfile.npp       <span class="cmt"># open existing file</span></pre></d
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="code-filename">fib.npp</div></div>
             <div class="code-block-body"><pre><span class="kw">#include</span> <span class="str">&lt;stdio.nh&gt;</span>
 
-<span class="typ">int</span> <span class="fn">fib</span>(<span class="typ">int</span> n) {
-    <span class="kw">if</span>(n <span class="op">&lt;=</span> <span class="num">1</span>) <span class="kw">then</span> { <span class="kw">return</span> n<span class="op">;</span> }
+<span class="kw">fn</span> <span class="fn">fib</span>(n<span class="op">:</span> <span class="typ">i32</span>) <span class="op">-&gt;</span> <span class="typ">i32</span> {
+    <span class="kw">if</span>(n <span class="op">&lt;=</span> <span class="num">1</span>) { <span class="kw">return</span> n<span class="op">;</span> }
     <span class="kw">return</span> <span class="fn">fib</span>(n <span class="op">-</span> <span class="num">1</span>) <span class="op">+</span> <span class="fn">fib</span>(n <span class="op">-</span> <span class="num">2</span>)<span class="op">;</span>
 }
 
-<span class="typ">void</span> <span class="fn">main</span>() {
-    <span class="kw">for</span>(<span class="typ">int</span> i <span class="op">=</span> <span class="num">0</span><span class="op">;</span> i <span class="op">&lt;=</span> <span class="num">10</span><span class="op">;</span> i<span class="op">++</span>) {
+<span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="kw">for</span>(<span class="kw">let</span> <span class="kw">mut</span> i<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> <span class="num">0</span><span class="op">;</span> i <span class="op">&lt;=</span> <span class="num">10</span><span class="op">;</span> i<span class="op">++</span>) {
         <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"%d\n"</span>, <span class="fn">fib</span>(i))<span class="op">;</span>
     }
 }</pre></div>
@@ -1106,21 +1115,21 @@ $ n++ -w myfile.npp       <span class="cmt"># open existing file</span></pre></d
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="code-filename">sieve.npp</div></div>
             <div class="code-block-body"><pre><span class="kw">#include</span> <span class="str">&lt;stdio.nh&gt;</span>
 
-<span class="typ">int</span> limit <span class="op">=</span> <span class="num">100000</span><span class="op">;</span>
-<span class="typ">int</span> isPrime[<span class="num">100001</span>]<span class="op">;</span>
+<span class="kw">let</span> limit<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> <span class="num">100000</span><span class="op">;</span>
+<span class="kw">let</span> <span class="kw">mut</span> isPrime<span class="op">:</span> <span class="typ">i32</span>[<span class="num">100001</span>] <span class="op">=</span> {}<span class="op">;</span>
 
-<span class="typ">void</span> <span class="fn">main</span>() {
-    <span class="kw">for</span>(<span class="typ">int</span> i <span class="op">=</span> <span class="num">2</span><span class="op">;</span> i <span class="op">&lt;=</span> limit<span class="op">;</span> i<span class="op">++</span>) {
-        <span class="kw">if</span>(isPrime[i] <span class="op">==</span> <span class="num">0</span>) <span class="kw">then</span> {
-            <span class="typ">int</span> j <span class="op">=</span> i <span class="op">*</span> <span class="num">2</span><span class="op">;</span>
+<span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="kw">for</span>(<span class="kw">let</span> <span class="kw">mut</span> i<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> <span class="num">2</span><span class="op">;</span> i <span class="op">&lt;=</span> limit<span class="op">;</span> i<span class="op">++</span>) {
+        <span class="kw">if</span>(isPrime[i] <span class="op">==</span> <span class="num">0</span>) {
+            <span class="kw">let</span> <span class="kw">mut</span> j<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> i <span class="op">*</span> <span class="num">2</span><span class="op">;</span>
             <span class="kw">while</span>(j <span class="op">&lt;=</span> limit) {
                 isPrime[j] <span class="op">=</span> <span class="num">1</span><span class="op">;</span>
                 j <span class="op">+=</span> i<span class="op">;</span>
             }
         }
     }
-    <span class="kw">for</span>(<span class="typ">int</span> n <span class="op">=</span> <span class="num">2</span><span class="op">;</span> n <span class="op">&lt;=</span> limit<span class="op">;</span> n<span class="op">++</span>) {
-        <span class="kw">if</span>(isPrime[n] <span class="op">==</span> <span class="num">0</span>) <span class="kw">then</span> {
+    <span class="kw">for</span>(<span class="kw">let</span> <span class="kw">mut</span> n<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> <span class="num">2</span><span class="op">;</span> n <span class="op">&lt;=</span> limit<span class="op">;</span> n<span class="op">++</span>) {
+        <span class="kw">if</span>(isPrime[n] <span class="op">==</span> <span class="num">0</span>) {
             <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"%d\n"</span>, n)<span class="op">;</span>
         }
     }
@@ -1132,13 +1141,13 @@ $ n++ -w myfile.npp       <span class="cmt"># open existing file</span></pre></d
             <div class="code-block-titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="code-filename">fizzbuzz.npp</div></div>
             <div class="code-block-body"><pre><span class="kw">#include</span> <span class="str">&lt;stdio.nh&gt;</span>
 
-<span class="typ">void</span> <span class="fn">main</span>() {
-    <span class="kw">for</span>(<span class="typ">int</span> i <span class="op">=</span> <span class="num">1</span><span class="op">;</span> i <span class="op">&lt;=</span> <span class="num">100</span><span class="op">;</span> i<span class="op">++</span>) {
-        <span class="kw">if</span>(i <span class="op">%</span> <span class="num">15</span> <span class="op">==</span> <span class="num">0</span>) <span class="kw">then</span> {
+<span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="kw">for</span>(<span class="kw">let</span> <span class="kw">mut</span> i<span class="op">:</span> <span class="typ">i32</span> <span class="op">=</span> <span class="num">1</span><span class="op">;</span> i <span class="op">&lt;=</span> <span class="num">100</span><span class="op">;</span> i<span class="op">++</span>) {
+        <span class="kw">if</span>(i <span class="op">%</span> <span class="num">15</span> <span class="op">==</span> <span class="num">0</span>) {
             <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"FizzBuzz\n"</span>)<span class="op">;</span>
-        } <span class="kw">else if</span>(i <span class="op">%</span> <span class="num">3</span> <span class="op">==</span> <span class="num">0</span>) <span class="kw">then</span> {
+        } <span class="kw">else if</span>(i <span class="op">%</span> <span class="num">3</span> <span class="op">==</span> <span class="num">0</span>) {
             <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"Fizz\n"</span>)<span class="op">;</span>
-        } <span class="kw">else if</span>(i <span class="op">%</span> <span class="num">5</span> <span class="op">==</span> <span class="num">0</span>) <span class="kw">then</span> {
+        } <span class="kw">else if</span>(i <span class="op">%</span> <span class="num">5</span> <span class="op">==</span> <span class="num">0</span>) {
             <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"Buzz\n"</span>)<span class="op">;</span>
         } <span class="kw">else</span> {
             <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"%d\n"</span>, i)<span class="op">;</span>
@@ -1153,24 +1162,24 @@ $ n++ -w myfile.npp       <span class="cmt"># open existing file</span></pre></d
             <div class="code-block-body"><pre><span class="kw">#include</span> <span class="str">&lt;stdio.nh&gt;</span>
 
 <span class="kw">struct</span> <span class="typ">Rectangle</span> {
-    <span class="typ">int</span> width<span class="op">;</span>
-    <span class="typ">int</span> height<span class="op">;</span>
+    width<span class="op">:</span> <span class="typ">i32</span><span class="op">;</span>
+    height<span class="op">:</span> <span class="typ">i32</span><span class="op">;</span>
+}
 
-    <span class="typ">int</span> <span class="fn">area</span>() {
-        <span class="kw">return</span> width <span class="op">*</span> height<span class="op">;</span>
+<span class="kw">impl</span> <span class="typ">Rectangle</span> {
+    <span class="kw">fn</span> <span class="fn">area</span>(<span class="op">&amp;</span><span class="kw">self</span>) <span class="op">-&gt;</span> <span class="typ">i32</span> {
+        <span class="kw">return</span> <span class="kw">self</span><span class="op">.</span>width <span class="op">*</span> <span class="kw">self</span><span class="op">.</span>height<span class="op">;</span>
     }
 
-    <span class="typ">int</span> <span class="fn">perimeter</span>() {
-        <span class="kw">return</span> (width <span class="op">+</span> height) <span class="op">*</span> <span class="num">2</span><span class="op">;</span>
+    <span class="kw">fn</span> <span class="fn">perimeter</span>(<span class="op">&amp;</span><span class="kw">self</span>) <span class="op">-&gt;</span> <span class="typ">i32</span> {
+        <span class="kw">return</span> (<span class="kw">self</span><span class="op">.</span>width <span class="op">+</span> <span class="kw">self</span><span class="op">.</span>height) <span class="op">*</span> <span class="num">2</span><span class="op">;</span>
     }
 }
 
-<span class="typ">void</span> <span class="fn">main</span>() {
-    <span class="typ">Rectangle</span> r<span class="op">;</span>
-    r<span class="op">.</span>width <span class="op">=</span> <span class="num">6</span><span class="op">;</span>
-    r<span class="op">.</span>height <span class="op">=</span> <span class="num">4</span><span class="op">;</span>
-    <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"area=%d\n"</span>, r<span class="op">.</span><span class="fn">area</span>())<span class="op">;</span>        <span class="cmt">// 24</span>
-    <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"perimeter=%d\n"</span>, r<span class="op">.</span><span class="fn">perimeter</span>())<span class="op">;</span>  <span class="cmt">// 20</span>
+<span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="kw">let</span> <span class="kw">mut</span> r<span class="op">:</span> <span class="typ">Rectangle</span> <span class="op">=</span> { width<span class="op">:</span> <span class="num">6</span><span class="op">,</span> height<span class="op">:</span> <span class="num">4</span> }<span class="op">;</span>
+    <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"area=%d\n"</span>, r<span class="op">.</span><span class="fn">area</span>())<span class="op">;</span>           <span class="cmt">// 24</span>
+    <span class="fn">std</span><span class="op">::</span><span class="fn">printf</span>(<span class="str">"perimeter=%d\n"</span>, r<span class="op">.</span><span class="fn">perimeter</span>())<span class="op">;</span> <span class="cmt">// 20</span>
 }</pre></div>
         </div>
     </div>

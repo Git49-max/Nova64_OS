@@ -1,5 +1,0 @@
-namespace std;
-
-fn sqrt(n: i32) -> f64;
-fn sqrt(n: i64) -> f64;
-fn sqrt(n: f64) -> f64;

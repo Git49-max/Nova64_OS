@@ -1,23 +1,19 @@
 #include <stdio.nh>
 
-// Mudamos para f64 para suportar números astronômicos
-fn factorial(n: f64) -> f64 {
-    if (n <= 1.0) {
-        return 1.0;
-    }
-    return n * factorial(n - 1.0);
+struct Point {
+    x: i32;
+    y: i32;
 }
 
 fn main() {
-    let mut f: f64 = 0.0;
-    
-    std::printf("Escolha um número para ver seu fatorial: ");
-    // %lf para ler double no scanf
-    std::scanf("%lf", &f);
-    
-    let res: f64 = factorial(f);
-    
-    // %e ativa a notação científica (ex: 9.33e+157)
-    // %.2e limita a duas casas decimais para ficar limpo
-    std::printf("Resultado: %e \n", res);
+    let mut s: i32 = 0;
+    std::print("Digite o valor de S");
+    std::scanf("%d", &s);
+    std::printf("O valor digitado foi: ");
+    std::print(s);
+    let point: Point = {
+        x: 1,
+        y: 2
+    };
+    std::printf("%d\n", point.x);   // 1
 }
